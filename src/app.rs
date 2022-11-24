@@ -38,7 +38,7 @@ pub fn app() -> Html {
 
                     // Learn more about Tauri commands at https://tauri.app/v1/guides/features/command
                     let new_msg = invoke(
-                        "eval",
+                        "evaluate_equation",
                         to_value(&EquationArgs { equation: &*equation }).unwrap(),
                     )
                     .await;
@@ -52,7 +52,7 @@ pub fn app() -> Html {
         );
     }
 
-    let eval = {
+    let evaluate_equation = {
         let equation = equation.clone();
         let equation_input_ref = equation_input_ref.clone();
         Callback::from(move |_| {
@@ -64,7 +64,7 @@ pub fn app() -> Html {
         <main class="container">
             <div class="row">
                 <input id="equation-input" ref={&*equation_input_ref} placeholder="Enter an equation..." />
-                <button type="button" onclick={eval}>{"Evaluate"}</button>
+                <button type="button" onclick={evaluate_equation}>{"Evaluate"}</button>
             </div>
 
             <p><b>{ &*equation_msg }</b></p>
