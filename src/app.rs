@@ -39,7 +39,10 @@ pub fn app() -> Html {
                     // Learn more about Tauri commands at https://tauri.app/v1/guides/features/command
                     let new_msg = invoke(
                         "evaluate_equation",
-                        to_value(&EquationArgs { equation: &*equation }).unwrap(),
+                        to_value(&EquationArgs {
+                            equation: &*equation,
+                        })
+                        .unwrap(),
                     )
                     .await;
                     log(&new_msg.as_string().unwrap());
@@ -56,7 +59,12 @@ pub fn app() -> Html {
         let equation = equation.clone();
         let equation_input_ref = equation_input_ref.clone();
         Callback::from(move |_| {
-            equation.set(equation_input_ref.cast::<web_sys::HtmlInputElement>().unwrap().value());
+            equation.set(
+                equation_input_ref
+                    .cast::<web_sys::HtmlInputElement>()
+                    .unwrap()
+                    .value(),
+            );
         })
     };
 
