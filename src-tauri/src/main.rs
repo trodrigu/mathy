@@ -4,144 +4,144 @@
     windows_subsystem = "windows"
 )]
 
+use pom::parser::Parser;
+use pom::parser::*;
+
 // Learn more about Tauri commands at https://tauri.app/v1/guides/features/command
 #[tauri::command]
 fn evaluate_equation(equation: &str) -> String {
-    let result: f32 = parse_equation(equation);
-    format!("x = {}", result)
+    let result: Result<Vec<Token>, pom::Error> = expression().parse(equation.as_bytes());
+    dbg!(result);
+    "".to_string()
 }
 
 #[derive(PartialEq, Clone, Debug)]
 pub enum Token {
-    Var(f32, String, i32),
-    Plus,
-    Minus,
-    Division,
-    Multiplication,
+    Var(String),
+    Op(Operator),
     Constant(f32),
     Equal,
+    RightParen,
+    LeftParen,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub enum Operator {
+    Add,
+    Subtract,
+    Multiply,
+    Divide,
     Exponent,
+    Modulo,
 }
 
-fn parse_term(maybe_term: &str) -> Token {
-    if is_equal(maybe_term.to_string()) {
-        Token::Equal
-    } else if is_operator(maybe_term.to_string()) {
-        parse_operator(maybe_term)
-    } else {
-        maybe_term.split('^').fold(Token::Constant(1.0), |acc, el| {
-            el.chars().fold(acc, |inner_acc, inner_el| {
-                let acc_cloned = inner_acc.clone();
-                if is_equal(inner_el.to_string()) {
-                    Token::Equal
-                } else if matches!(acc_cloned, Token::Var(_, _, _)) {
-                    if let Token::Var(signed_float, var_str, _int) = acc_cloned {
-                        let signed_integer = inner_el.to_string().parse::<i32>().unwrap();
-                        Token::Var(signed_float, var_str, signed_integer)
-                    } else {
-                        acc_cloned
-                    }
-                } else if inner_el.is_digit(10) {
-                    if let Token::Constant(sign) = acc_cloned {
-                        let current_float = inner_el.to_string().parse::<f32>().unwrap();
-                        Token::Constant(sign * current_float)
-                    } else {
-                        acc_cloned
-                    }
-                } else if is_sign(inner_el.to_string()) {
-                    let mut sign = inner_el.to_string();
-                    sign.push_str("1.0");
-                    let signed_float = sign.parse::<f32>().unwrap();
-                    Token::Constant(signed_float)
-                } else if char::is_ascii_alphabetic(&inner_el) {
-                    if let Token::Constant(signed_float) = acc_cloned {
-                        Token::Var(signed_float, inner_el.to_string(), 1)
-                    } else {
-                        acc_cloned
-                    }
-                } else {
-                    acc_cloned
-                }
-            })
+fn variable<'a>() -> Parser<'a, u8, Token> {
+    one_of(b"abcdefghijklmnopqrstuvwxyz")
+        .repeat(1..)
+        .collect()
+        .convert(|sy| (String::from_utf8(sy.to_vec())))
+        .map(Token::Var)
+}
+fn right_paren<'a>() -> Parser<'a, u8, Token> {
+    sym(b')').map(|_sy| Token::RightParen)
+}
+fn left_paren<'a>() -> Parser<'a, u8, Token> {
+    sym(b'(').map(|_sy| Token::LeftParen)
+}
+fn equal<'a>() -> Parser<'a, u8, Token> {
+    sym(b'=').map(|_sy| Token::Equal)
+}
+fn number<'a>() -> Parser<'a, u8, Token> {
+    let integer = one_of(b"123456789") - one_of(b"0123456789").repeat(0..) | sym(b'0');
+    let frac = sym(b'.') + one_of(b"0123456789").repeat(1..);
+    let exp = one_of(b"eE") + one_of(b"+-").opt() + one_of(b"0123456789").repeat(1..);
+    let number = sym(b'-').opt() + integer + frac.opt() + exp.opt();
+    number
+        .collect()
+        .convert(|v| String::from_utf8(v.to_vec()))
+        .convert(|s| s.parse::<f32>())
+        .map(Token::Constant)
+}
+
+fn operator<'a>() -> Parser<'a, u8, Token> {
+    one_of(b"+-*/^%")
+        .map(|sy| match sy {
+            b'+' => Operator::Add,
+            b'-' => Operator::Subtract,
+            b'*' => Operator::Multiply,
+            b'/' => Operator::Divide,
+            b'^' => Operator::Exponent,
+            b'%' => Operator::Modulo,
+            _ => Operator::Add,
         })
-    }
+        .map(Token::Op)
 }
 
-fn is_sign(str: String) -> bool {
-    str == "-" || str == "+"
+fn expression<'a>() -> Parser<'a, u8, Vec<Token>> {
+    let expr = number() | operator() | variable() | equal() | right_paren() | left_paren();
+    expr.repeat(1..)
 }
 
-fn is_equal(str: String) -> bool {
-    str == "="
-}
+// pub fn equation_parser(input: String) -> Result<Vec<Token>, pom::Error> {
+//     let string = input.to_owned();
+//     let string_bytes = string.into_bytes();
+//     expression()
+//         .parse(&string_bytes)
+// }
 
-fn is_operator(str: String) -> bool {
-    str == "-" || str == "+" || str == "/" || str == "*"
-}
+//fn parse_equation(equation: &str) -> Option<Vec<Token>> {
+//let mut parsed_equation: Vec<Token> = Vec::new();
 
-fn parse_operator(str: &str) -> Token {
-    match str {
-        "-" => Token::Minus,
-        "+" => Token::Plus,
-        "/" => Token::Division,
-        "*" => Token::Multiplication,
-        _ => Token::Constant(1.0),
-    }
-}
+//for maybe_term in equation.split(' ') {
+//let term = parse_term(maybe_term);
+//parsed_equation.push(term);
+//}
 
-fn parse_equation(equation: &str) -> f32 {
-    let mut parsed_equation: Vec<Token> = Vec::new();
+//let mut sides: Vec<Vec<Token>> = Vec::new();
 
-    for maybe_term in equation.split(' ') {
-        let term = parse_term(maybe_term);
-        parsed_equation.push(term);
-    }
+//let parsed_equation_iter = parsed_equation.split(|el| el == &Token::Equal);
 
-    let mut sides: Vec<Vec<Token>> = Vec::new();
+//for side in parsed_equation_iter {
+//sides.push(side.to_vec());
+//}
 
-    let parsed_equation_iter = parsed_equation.split(|el| el == &Token::Equal);
+//let right: Vec<Token> = sides.pop().unwrap();
 
-    for side in parsed_equation_iter {
-        sides.push(side.to_vec());
-    }
+//let left: Vec<Token> = sides.pop().unwrap();
 
-    let right: Vec<Token> = sides.pop().unwrap();
+//dbg!(right);
+//dbg!(left);
 
-    let left: Vec<Token> = sides.pop().unwrap();
+////let new_left: Vec<Term> = Vec::new();
 
-    dbg!(right);
-    dbg!(left);
+////for left_el in left_grouped.iter() {
+////if matches!(left_el, Token::Var) {
+////new_left.push(left_el);
+////} else {
+////right_grouped.push(left_el);
+////}
+////}
 
-    //let new_left: Vec<Term> = Vec::new();
+////while let Some(el) = constants_and_operators_left_tuples.pop() {
+////let negated_el = negate(el);
+////constants_and_operators_right_tuples.push(negated_el);
+////}
 
-    //for left_el in left_grouped.iter() {
-    //if matches!(left_el, Token::Var) {
-    //new_left.push(left_el);
-    //} else {
-    //right_grouped.push(left_el);
-    //}
-    //}
+////while let Some(el) = vars_right_tuples.pop() {
+////let negated_el = negate(el);
+////vars_left_tuples.push(negated_el);
+////}
 
-    //while let Some(el) = constants_and_operators_left_tuples.pop() {
-    //let negated_el = negate(el);
-    //constants_and_operators_right_tuples.push(negated_el);
-    //}
-
-    //while let Some(el) = vars_right_tuples.pop() {
-    //let negated_el = negate(el);
-    //vars_left_tuples.push(negated_el);
-    //}
-
-    //collapse_right(constants_and_operators_right_tuples)
-    0.0
-}
+////collapse_right(constants_and_operators_right_tuples)
+//0.0
+//}
 
 //fn collapse_right(right: Vec<(Option<Token>, Token)>) -> f32 {
 //right.iter().fold(
 //0.0,
 //|acc_val, maybe_operator_and_constant| match maybe_operator_and_constant {
 //(None, Token::Constant(val)) => acc_val + *val,
-//(Some(Token::Plus), Token::Constant(val)) => acc_val + *val,
+//(Some(Token::Add), Token::Constant(val)) => acc_val + *val,
 //(Some(Token::Minus), Token::Constant(val)) => acc_val - *val,
 //(Some(Token::Multiplication), Token::Constant(val)) => acc_val * *val,
 //(Some(Token::Division), Token::Constant(val)) => acc_val / *val,
@@ -154,16 +154,16 @@ fn parse_equation(equation: &str) -> f32 {
 //match side_tuple {
 //(None, Token::Constant(val)) => (None, Token::Constant(val)),
 //(None, Token::Var(val)) => (None, Token::Var(val)),
-//(Some(Token::Plus), Token::Constant(val)) => (Some(Token::Minus), Token::Constant(val)),
-//(Some(Token::Minus), Token::Constant(val)) => (Some(Token::Plus), Token::Constant(val)),
+//(Some(Token::Add), Token::Constant(val)) => (Some(Token::Minus), Token::Constant(val)),
+//(Some(Token::Minus), Token::Constant(val)) => (Some(Token::Add), Token::Constant(val)),
 //(Some(Token::Multiplication), Token::Constant(val)) => {
 //(Some(Token::Division), Token::Constant(val))
 //}
 //(Some(Token::Division), Token::Constant(val)) => {
 //(Some(Token::Multiplication), Token::Constant(val))
 //}
-//(Some(Token::Plus), Token::Var(val)) => (Some(Token::Minus), Token::Var(val)),
-//(Some(Token::Minus), Token::Var(val)) => (Some(Token::Plus), Token::Var(val)),
+//(Some(Token::Add), Token::Var(val)) => (Some(Token::Minus), Token::Var(val)),
+//(Some(Token::Minus), Token::Var(val)) => (Some(Token::Add), Token::Var(val)),
 //(Some(Token::Multiplication), Token::Var(val)) => (Some(Token::Division), Token::Var(val)),
 //(Some(Token::Division), Token::Var(val)) => (Some(Token::Multiplication), Token::Var(val)),
 
@@ -177,4 +177,25 @@ fn main() {
         .invoke_handler(tauri::generate_handler![evaluate_equation])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_equation_parser() {
+        let input = b"2.0x+3.0=4.0^2.0";
+        let expected = vec![
+            Token::Constant(2.0),
+            Token::Var("x".to_string()),
+            Token::Op(Operator::Add),
+            Token::Constant(3.0),
+            Token::Equal,
+            Token::Constant(4.0),
+            Token::Op(Operator::Exponent),
+            Token::Constant(2.0),
+        ];
+        assert_eq!(equation_parser(input), expected);
+    }
 }
