@@ -6,6 +6,7 @@
 
 use pom::parser::Parser;
 use pom::parser::*;
+use std::rc::Rc;
 
 // Learn more about Tauri commands at https://tauri.app/v1/guides/features/command
 #[tauri::command]
@@ -23,6 +24,7 @@ pub enum Token {
     Equal,
     RightParen,
     LeftParen,
+    Function(String, Option<Rc<Token>>),
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -35,6 +37,21 @@ pub enum Operator {
     Modulo,
 }
 
+fn function<'a>() -> Parser<'a, u8, Token> {
+    let f = function_name() - left_paren() + variable().opt() - right_paren();
+
+    f.map(|(fname, v)| match v {
+        Some(inner_v) => Token::Function(fname, Some(Rc::new(inner_v))),
+        None => Token::Function(fname, None),
+    })
+}
+fn function_name<'a>() -> Parser<'a, u8, String> {
+    let function_name = one_of(b"abcdefghijklmnopqrstuvwxyz").repeat(1..)
+        | one_of(b"ABCDEFGHIJKLMNOPQRSTUVWXYZ").repeat(1..);
+    function_name
+        .collect()
+        .convert(|sy| (String::from_utf8(sy.to_vec())))
+}
 fn variable<'a>() -> Parser<'a, u8, Token> {
     one_of(b"abcdefghijklmnopqrstuvwxyz")
         .repeat(1..)
@@ -78,7 +95,8 @@ fn operator<'a>() -> Parser<'a, u8, Token> {
 }
 
 fn expression<'a>() -> Parser<'a, u8, Vec<Token>> {
-    let expr = number() | operator() | variable() | equal() | right_paren() | left_paren();
+    let expr =
+        function() | number() | operator() | variable() | equal() | right_paren() | left_paren();
     expr.repeat(1..)
 }
 
@@ -184,18 +202,19 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_equation_parser() {
-        let input = b"2.0x+3.0=4.0^2.0";
+    fn test_parse_define_polynomial() {
+        let input = b"f(x)=2.0x+3.0-4.0^2.0";
         let expected = vec![
+            Token::Function("f".to_string(), Some(Rc::new(Token::Var("x".to_string())))),
+            Token::Equal,
             Token::Constant(2.0),
             Token::Var("x".to_string()),
             Token::Op(Operator::Add),
             Token::Constant(3.0),
-            Token::Equal,
-            Token::Constant(4.0),
+            Token::Constant(-4.0),
             Token::Op(Operator::Exponent),
             Token::Constant(2.0),
         ];
-        assert_eq!(equation_parser(input), expected);
+        assert_eq!(expression().parse(input), Ok(expected));
     }
 }
