@@ -37,6 +37,19 @@ pub enum Operator {
     Modulo,
 }
 
+fn eval(tokens: Vec<Token>) -> f32 {
+    let parsed_equation_iter = tokens.split(|el| el == &Token::Equal);
+
+   let mut sides: Vec<Vec<Token>> = Vec::new();
+    for side in parsed_equation_iter {
+        sides.push(side.to_vec());
+    }
+
+    let right: Vec<Token> = sides.pop().unwrap();
+
+    collapse_right(right)
+}
+
 fn function<'a>() -> Parser<'a, u8, Token> {
     let f = function_name() - left_paren() + variable().opt() - right_paren();
 
@@ -72,7 +85,7 @@ fn number<'a>() -> Parser<'a, u8, Token> {
     let integer = one_of(b"123456789") - one_of(b"0123456789").repeat(0..) | sym(b'0');
     let frac = sym(b'.') + one_of(b"0123456789").repeat(1..);
     let exp = one_of(b"eE") + one_of(b"+-").opt() + one_of(b"0123456789").repeat(1..);
-    let number = sym(b'-').opt() + integer + frac.opt() + exp.opt();
+    let number = integer + frac.opt() + exp.opt();
     number
         .collect()
         .convert(|v| String::from_utf8(v.to_vec()))
@@ -154,19 +167,29 @@ fn expression<'a>() -> Parser<'a, u8, Vec<Token>> {
 //0.0
 //}
 
-//fn collapse_right(right: Vec<(Option<Token>, Token)>) -> f32 {
-//right.iter().fold(
-//0.0,
-//|acc_val, maybe_operator_and_constant| match maybe_operator_and_constant {
-//(None, Token::Constant(val)) => acc_val + *val,
-//(Some(Token::Add), Token::Constant(val)) => acc_val + *val,
-//(Some(Token::Minus), Token::Constant(val)) => acc_val - *val,
-//(Some(Token::Multiplication), Token::Constant(val)) => acc_val * *val,
-//(Some(Token::Division), Token::Constant(val)) => acc_val / *val,
-//_ => acc_val,
-//},
-//)
-//}
+fn collapse_right(right: Vec<Token>) -> f32 {
+    right.iter().fold(
+        (None, 0.0),
+        |acc_val, token| match token {
+            Token::Constant(val) => {
+               match acc_val {
+                  (Some(Token::Op(Operator::Add)),running_total) => (None, running_total + val),
+                  (Some(Token::Op(Operator::Subtract)),running_total) => (None, running_total - val),
+                  (Some(Token::Op(Operator::Multiply)),running_total) => (None, running_total * val),
+                  (Some(Token::Op(Operator::Divide)),running_total) => (None, running_total / val),
+
+                  (possible_op,running_total) => (possible_op, running_total),
+               }
+            },
+            Token::Op(op) => {
+               match acc_val {
+                  (None,running_total) => (Some(Token::Op(*op)), running_total),
+               }
+            },
+            _ => acc_val,
+        },
+    ).1
+}
 
 //fn negate(side_tuple: (Option<Token>, Token)) -> (Option<Token>, Token) {
 //match side_tuple {
@@ -211,10 +234,47 @@ mod tests {
             Token::Var("x".to_string()),
             Token::Op(Operator::Add),
             Token::Constant(3.0),
-            Token::Constant(-4.0),
+            Token::Op(Operator::Subtract),
+            Token::Constant(4.0),
             Token::Op(Operator::Exponent),
             Token::Constant(2.0),
         ];
         assert_eq!(expression().parse(input), Ok(expected));
+    }
+
+    #[test]
+    fn test_parse_define_polynomial_double_neg() {
+        let input = b"f(x)=2.0x+3.0--4.0^2.0";
+        let expected = vec![
+            Token::Function("f".to_string(), Some(Rc::new(Token::Var("x".to_string())))),
+            Token::Equal,
+            Token::Constant(2.0),
+            Token::Var("x".to_string()),
+            Token::Op(Operator::Add),
+            Token::Constant(3.0),
+            Token::Op(Operator::Subtract),
+            Token::Op(Operator::Subtract),
+            Token::Constant(4.0),
+            Token::Op(Operator::Exponent),
+            Token::Constant(2.0),
+        ];
+        assert_eq!(expression().parse(input), Ok(expected));
+    }
+
+    #[test]
+    fn test_eval_polynomial_double_neg() {
+        let input = vec![
+            Token::Function("f".to_string(), Some(Rc::new(Token::Var("x".to_string())))),
+            Token::Equal,
+            Token::Constant(2.0),
+            Token::Var("x".to_string()),
+            Token::Op(Operator::Add),
+            Token::Constant(3.0),
+            Token::Op(Operator::Subtract),
+            Token::Constant(4.0),
+            Token::Op(Operator::Exponent),
+            Token::Constant(2.0),
+        ];
+        assert_eq!(eval(input), -9.0);
     }
 }
