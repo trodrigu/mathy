@@ -25,6 +25,7 @@ pub enum Token {
     RightParen,
     LeftParen,
     Function(String, Option<Rc<Token>>),
+    FunctionValue(String, f32),
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -40,7 +41,7 @@ pub enum Operator {
 fn eval(tokens: Vec<Token>) -> f32 {
     let parsed_equation_iter = tokens.split(|el| el == &Token::Equal);
 
-   let mut sides: Vec<Vec<Token>> = Vec::new();
+    let mut sides: Vec<Vec<Token>> = Vec::new();
     for side in parsed_equation_iter {
         sides.push(side.to_vec());
     }
@@ -113,6 +114,47 @@ fn expression<'a>() -> Parser<'a, u8, Vec<Token>> {
     expr.repeat(1..)
 }
 
+fn substitute(equation: Vec<Token>, value: f32) -> Vec<Token> {
+    // let equation_used_for_find = equation.clone();
+    let function = equation
+        .iter()
+        .find(|&el| matches!(el, Token::Function(_, _)))
+        .unwrap();
+
+    let var = match function {
+        Token::Function(_function_name, Some(rc_var)) => rc_var.as_ref(),
+        _ => todo!(),
+    };
+
+    let var_name = match var {
+        Token::Var(name) => name,
+        _ => todo!(),
+    };
+
+    let mut new_equation: Vec<Token> = Vec::new();
+    let mut eq_iter = equation.iter();
+    while let Some(token) = eq_iter.next() {
+        match token {
+            Token::Var(name) => {
+                if name == var_name {
+                    new_equation.push(Token::LeftParen);
+                    new_equation.push(Token::Constant(value));
+                    new_equation.push(Token::RightParen);
+                }
+            }
+            _ => new_equation.push(token.clone()),
+        }
+    }
+
+    new_equation
+        .iter()
+        .map(|el| match el {
+            Token::Function(name, _var) => Token::FunctionValue(name.clone(), value),
+            _ => el.clone(),
+        })
+        .collect::<Vec<Token>>()
+}
+
 // pub fn equation_parser(input: String) -> Result<Vec<Token>, pom::Error> {
 //     let string = input.to_owned();
 //     let string_bytes = string.into_bytes();
@@ -166,52 +208,217 @@ fn expression<'a>() -> Parser<'a, u8, Vec<Token>> {
 ////collapse_right(constants_and_operators_right_tuples)
 //0.0
 //}
-
-fn collapse_right(right: Vec<Token>) -> f32 {
-    right.iter().fold(
-        (None, 0.0),
-        |acc_val, token| match token {
-            Token::Constant(val) => {
-               match acc_val {
-                  (Some(Token::Op(Operator::Add)),running_total) => (None, running_total + val),
-                  (Some(Token::Op(Operator::Subtract)),running_total) => (None, running_total - val),
-                  (Some(Token::Op(Operator::Multiply)),running_total) => (None, running_total * val),
-                  (Some(Token::Op(Operator::Divide)),running_total) => (None, running_total / val),
-
-                  (possible_op,running_total) => (possible_op, running_total),
-               }
-            },
-            Token::Op(op) => {
-               match acc_val {
-                  (None,running_total) => (Some(Token::Op(*op)), running_total),
-               }
-            },
-            _ => acc_val,
-        },
-    ).1
+//
+//
+fn eval_divide(equation: Vec<Token>) -> Vec<Token> {
+    eval_binary_operation(equation, Token::Op(Operator::Divide))
 }
 
-//fn negate(side_tuple: (Option<Token>, Token)) -> (Option<Token>, Token) {
-//match side_tuple {
-//(None, Token::Constant(val)) => (None, Token::Constant(val)),
-//(None, Token::Var(val)) => (None, Token::Var(val)),
-//(Some(Token::Add), Token::Constant(val)) => (Some(Token::Minus), Token::Constant(val)),
-//(Some(Token::Minus), Token::Constant(val)) => (Some(Token::Add), Token::Constant(val)),
-//(Some(Token::Multiplication), Token::Constant(val)) => {
-//(Some(Token::Division), Token::Constant(val))
-//}
-//(Some(Token::Division), Token::Constant(val)) => {
-//(Some(Token::Multiplication), Token::Constant(val))
-//}
-//(Some(Token::Add), Token::Var(val)) => (Some(Token::Minus), Token::Var(val)),
-//(Some(Token::Minus), Token::Var(val)) => (Some(Token::Add), Token::Var(val)),
-//(Some(Token::Multiplication), Token::Var(val)) => (Some(Token::Division), Token::Var(val)),
-//(Some(Token::Division), Token::Var(val)) => (Some(Token::Multiplication), Token::Var(val)),
+fn eval_multiply(equation: Vec<Token>) -> Vec<Token> {
+    let mut equation_iter = equation.iter();
+    let mut new_equation = Vec::new();
+    while let Some(token) = equation_iter.next() {
+        match token {
+            Token::LeftParen => match equation_iter.next() {
+                Some(Token::Constant(left)) => {
+                    let possible_paren_or_constant = equation_iter.next();
+                    dbg!(possible_paren_or_constant.clone());
 
-//(None, token) => (None, token),
-//(Some(optional_token), token) => (Some(optional_token), token),
-//}
-//}
+                    match possible_paren_or_constant {
+                        Some(Token::RightParen) => match equation_iter.next() {
+                            Some(Token::LeftParen) => {
+                                if let Some(Token::Constant(right)) = equation_iter.next() {
+                                    let constant_value = left * right;
+                                    let _unneeded_right_paren = equation_iter.next();
+                                    new_equation.push(Token::Constant(constant_value));
+                                };
+                            }
+                            Some(Token::Constant(right)) => {
+                                let constant_value = left * right;
+                                new_equation.push(Token::Constant(constant_value));
+                            }
+                            Some(_) => todo!(),
+                            None => todo!(),
+                        },
+                        Some(Token::Constant(left)) => {
+                            if let Some(Token::Constant(right)) = equation_iter.next() {
+                                let constant_value = left * right;
+                                new_equation.push(Token::Constant(constant_value));
+                            };
+                        }
+                        Some(_) => todo!(),
+                        None => {}
+                    }
+                }
+                None => todo!(),
+                Some(_) => todo!(),
+            },
+            Token::Constant(left) => match equation_iter.next() {
+                Some(Token::LeftParen) => match equation_iter.next() {
+                    Some(Token::Constant(right)) => {
+                        let constant_value = left * right;
+                        let _unneeded_right_paren = equation_iter.next();
+                        new_equation.push(Token::Constant(constant_value));
+                    }
+                    Some(_) => todo!(),
+                    None => todo!(),
+                },
+                Some(Token::Constant(left)) => {
+                    if let Some(Token::Constant(right)) = equation_iter.next() {
+                        let constant_value = left * right;
+                        new_equation.push(Token::Constant(constant_value));
+                    };
+                }
+                Some(Token::Op(Operator::Multiply)) => match equation_iter.next() {
+                    Some(Token::Constant(right)) => {
+                        let constant_value = left * *right;
+                        new_equation.push(Token::Constant(constant_value));
+                    }
+                    Some(_) => todo!(),
+                    None => todo!(),
+                },
+                Some(_) => todo!(),
+                None => todo!(),
+            },
+            _ => new_equation.push(token.clone()),
+        }
+    }
+    new_equation
+}
+
+fn eval_add(equation: Vec<Token>) -> Vec<Token> {
+    eval_binary_operation(equation, Token::Op(Operator::Add))
+}
+
+fn eval_binary_operation(equation: Vec<Token>, operator: Token) -> Vec<Token> {
+    let mut equation_iter = equation.iter();
+    let mut new_equation = Vec::new();
+    while let Some(token) = equation_iter.next() {
+        match token {
+            Token::Constant(left) => match equation_iter.next() {
+                Some(Token::Op(Operator::Divide)) => match equation_iter.next() {
+                    Some(Token::Constant(right)) => {
+                        let constant_value = left / right;
+                        new_equation.push(Token::Constant(constant_value));
+                    }
+                    Some(_) => todo!(),
+                    None => todo!(),
+                },
+                Some(Token::Op(Operator::Add)) => match equation_iter.next() {
+                    Some(Token::Constant(right)) => {
+                        let constant_value = left + right;
+                        new_equation.push(Token::Constant(constant_value));
+                    }
+                    Some(_) => todo!(),
+                    None => todo!(),
+                },
+                Some(_) => todo!(),
+                None => todo!(),
+            },
+            Token::Op(Operator::Divide) => match equation_iter.next() {
+                Some(Token::Constant(left)) => match new_equation.pop() {
+                    Some(Token::Constant(last_val)) => {
+                        let constant_value = last_val / left;
+                        new_equation.push(Token::Constant(constant_value));
+                    }
+                    Some(_) => todo!(),
+                    None => todo!(),
+                },
+                Some(_) => todo!(),
+                None => todo!(),
+            },
+            Token::Op(Operator::Add) => match equation_iter.next() {
+                Some(Token::Constant(left)) => match new_equation.pop() {
+                    Some(Token::Constant(last_val)) => {
+                        let constant_value = last_val + left;
+                        new_equation.push(Token::Constant(constant_value));
+                    }
+                    Some(_) => todo!(),
+                    None => todo!(),
+                },
+                Some(_) => todo!(),
+                None => todo!(),
+            },
+            _ => new_equation.push(token.clone()),
+        }
+    }
+    new_equation
+}
+
+fn eval_exponent(equation: Vec<Token>) -> Vec<Token> {
+    let mut equation_iter = equation.iter();
+    let mut new_equation = Vec::new();
+    while let Some(token) = equation_iter.next() {
+        match token {
+            Token::Op(Operator::Exponent) => {
+                if let Some(Token::Constant(power)) = equation_iter.next() {
+                    let previous_token = new_equation.pop();
+
+                    match previous_token {
+                        Some(Token::RightParen) => {
+                            if let Some(Token::Constant(base)) = new_equation.pop() {
+                                let constant_value = base.powf(*power);
+                                new_equation.push(Token::Constant(constant_value));
+                                new_equation.push(Token::RightParen);
+                            }
+                        }
+                        Some(Token::Constant(base)) => {
+                            let constant_value = base.powf(*power);
+                            new_equation.push(Token::Constant(constant_value));
+                        }
+                        Some(_) => todo!(),
+                        None => todo!(),
+                    }
+                }
+            }
+            _ => new_equation.push(token.clone()),
+        }
+    }
+    new_equation
+    //  right.iter().fold(
+    //      (None, 0.0),
+    //      |acc_val, token| match token {
+    //          Token::Constant(val) => {
+    //             match acc_val {
+    //                (Some(Token::Op(Operator::Add)),running_total) => (None, running_total + val),
+    //                (Some(Token::Op(Operator::Subtract)),running_total) => (None, running_total - val),
+    //                (Some(Token::Op(Operator::Multiply)),running_total) => (None, running_total * val),
+    //                (Some(Token::Op(Operator::Divide)),running_total) => (None, running_total / val),
+
+    //                (possible_op,running_total) => (possible_op, running_total),
+    //             }
+    //          },
+    //          Token::Op(op) => {
+    //             match acc_val {
+    //                (None,running_total) => (Some(Token::Op(op.clone())), running_total),
+    //                (Some(_), _) => todo!(),
+    //             }
+    //          },
+    //          _ => acc_val,
+    //      },
+    // //  ).1
+}
+fn collapse_right(right: Vec<Token>) -> f32 {
+    // how do we apply parenthesis, exponent, multiply, division, addition, subtract
+    right
+        .iter()
+        .fold((None, 0.0), |acc_val, token| match token {
+            Token::Constant(val) => match acc_val {
+                (Some(Token::Op(Operator::Add)), running_total) => (None, running_total + val),
+                (Some(Token::Op(Operator::Subtract)), running_total) => (None, running_total - val),
+                (Some(Token::Op(Operator::Multiply)), running_total) => (None, running_total * val),
+                (Some(Token::Op(Operator::Divide)), running_total) => (None, running_total / val),
+
+                (possible_op, running_total) => (possible_op, running_total),
+            },
+            Token::Op(op) => match acc_val {
+                (None, running_total) => (Some(Token::Op(op.clone())), running_total),
+                (Some(_), _) => todo!(),
+            },
+            _ => acc_val,
+        })
+        .1
+}
 
 fn main() {
     tauri::Builder::default()
@@ -225,7 +432,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_parse_define_polynomial() {
+    fn test_parse_define_polynomial_with_base_case() {
         let input = b"f(x)=2.0x+3.0-4.0^2.0";
         let expected = vec![
             Token::Function("f".to_string(), Some(Rc::new(Token::Var("x".to_string())))),
@@ -243,7 +450,7 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_define_polynomial_double_neg() {
+    fn test_parse_define_polynomial_with_double_neg() {
         let input = b"f(x)=2.0x+3.0--4.0^2.0";
         let expected = vec![
             Token::Function("f".to_string(), Some(Rc::new(Token::Var("x".to_string())))),
@@ -262,6 +469,68 @@ mod tests {
     }
 
     #[test]
+    fn test_substitute_polynomial_with_double_neg() {
+        let input = vec![
+            Token::Function("f".to_string(), Some(Rc::new(Token::Var("x".to_string())))),
+            Token::Equal,
+            Token::Constant(2.0),
+            Token::Var("x".to_string()),
+            Token::Op(Operator::Add),
+            Token::Constant(3.0),
+            Token::Op(Operator::Subtract),
+            Token::Constant(4.0),
+            Token::Var("x".to_string()),
+            Token::Op(Operator::Exponent),
+            Token::Constant(2.0),
+        ];
+        assert_eq!(
+            substitute(input, 9.0),
+            vec![
+                Token::FunctionValue("f".to_string(), 9.0),
+                Token::Equal,
+                Token::Constant(2.0),
+                Token::LeftParen,
+                Token::Constant(9.0),
+                Token::RightParen,
+                Token::Op(Operator::Add),
+                Token::Constant(3.0),
+                Token::Op(Operator::Subtract),
+                Token::Constant(4.0),
+                Token::LeftParen,
+                Token::Constant(9.0),
+                Token::RightParen,
+                Token::Op(Operator::Exponent),
+                Token::Constant(2.0),
+            ]
+        );
+    }
+
+    #[test]
+    fn test_eval_exponent_polynomial() {
+        let input = vec![
+            Token::Constant(9.0),
+            Token::Op(Operator::Exponent),
+            Token::Constant(2.0),
+        ];
+        assert_eq!(eval_exponent(input), vec![Token::Constant(81.0),]);
+    }
+
+    #[test]
+    fn test_eval_exponent_polynomial_with_variable_sub() {
+        let input = vec![
+            Token::LeftParen,
+            Token::Constant(9.0),
+            Token::RightParen,
+            Token::Op(Operator::Exponent),
+            Token::Constant(2.0),
+        ];
+        assert_eq!(
+            eval_exponent(input),
+            vec![Token::LeftParen, Token::Constant(81.0), Token::RightParen,]
+        );
+    }
+
+    #[test]
     fn test_eval_polynomial_double_neg() {
         let input = vec![
             Token::Function("f".to_string(), Some(Rc::new(Token::Var("x".to_string())))),
@@ -276,5 +545,82 @@ mod tests {
             Token::Constant(2.0),
         ];
         assert_eq!(eval(input), -9.0);
+    }
+
+    #[test]
+    fn test_eval_multiply() {
+        let input = vec![
+            Token::Constant(9.0),
+            Token::Op(Operator::Multiply),
+            Token::Constant(2.0),
+        ];
+        assert_eq!(eval_multiply(input), vec![Token::Constant(18.0),]);
+    }
+
+    #[test]
+    fn test_eval_multiply_parens() {
+        let input = vec![
+            Token::LeftParen,
+            Token::Constant(9.0),
+            Token::RightParen,
+            Token::Constant(2.0),
+        ];
+        assert_eq!(eval_multiply(input), vec![Token::Constant(18.0),]);
+
+        let input = vec![
+            Token::Constant(9.0),
+            Token::LeftParen,
+            Token::Constant(2.0),
+            Token::RightParen,
+        ];
+        assert_eq!(eval_multiply(input), vec![Token::Constant(18.0),]);
+
+        let input = vec![
+            Token::LeftParen,
+            Token::Constant(9.0),
+            Token::RightParen,
+            Token::LeftParen,
+            Token::Constant(2.0),
+            Token::RightParen,
+        ];
+        assert_eq!(eval_multiply(input), vec![Token::Constant(18.0),]);
+    }
+
+    #[test]
+    fn test_eval_division() {
+        let input = vec![
+            Token::Constant(9.0),
+            Token::Op(Operator::Divide),
+            Token::Constant(2.0),
+        ];
+        assert_eq!(eval_divide(input), vec![Token::Constant(4.5),]);
+
+        let input = vec![
+            Token::Constant(100.0),
+            Token::Op(Operator::Divide),
+            Token::Constant(2.0),
+            Token::Op(Operator::Divide),
+            Token::Constant(2.0),
+        ];
+        assert_eq!(eval_divide(input), vec![Token::Constant(25.0),]);
+    }
+
+    #[test]
+    fn test_eval_addition() {
+        let input = vec![
+            Token::Constant(9.0),
+            Token::Op(Operator::Add),
+            Token::Constant(2.0),
+        ];
+        assert_eq!(eval_add(input), vec![Token::Constant(11.0),]);
+
+        let input = vec![
+            Token::Constant(100.0),
+            Token::Op(Operator::Add),
+            Token::Constant(2.0),
+            Token::Op(Operator::Add),
+            Token::Constant(2.0),
+        ];
+        assert_eq!(eval_add(input), vec![Token::Constant(104.0),]);
     }
 }
