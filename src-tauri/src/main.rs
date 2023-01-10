@@ -12,7 +12,12 @@ use std::rc::Rc;
 #[tauri::command]
 fn evaluate_equation(equation: &str) -> String {
     let result: Result<Vec<Token>, pom::Error> = expression().parse(equation.as_bytes());
-    "".to_string()
+    match result {
+        Ok(tokens) => eval(tokens, 2.0).to_string(),
+        Err(_err) => {
+            panic!("nope")
+        }
+    }
 }
 
 #[derive(PartialEq, Clone, Debug)]
@@ -183,7 +188,7 @@ fn eval_multiply(equation: Vec<Token>) -> Vec<Token> {
                         Some(_) => todo!(),
                         None => todo!(),
                     },
-                    Some(t) => (),
+                    Some(_) => todo!(),
                     None => new_equation.push(Token::Constant(left.clone())),
                 },
                 None => todo!(),
@@ -292,8 +297,18 @@ fn eval_binary_operation(equation: Vec<Token>) -> Vec<Token> {
                             Some(_) => todo!(),
                             None => todo!(),
                         },
-                        Some(_) => todo!(),
-                        None => panic!("nope"),
+                        // maybe?
+                        Some(t) => {
+                            new_equation.push(Token::LeftParen);
+                            new_equation.push(Token::Constant(left.clone()));
+                            new_equation.push(Token::RightParen);
+                            new_equation.push(t.clone());
+                        }
+                        None => {
+                            new_equation.push(Token::LeftParen);
+                            new_equation.push(Token::Constant(left.clone()));
+                            new_equation.push(Token::RightParen);
+                        }
                     },
                     Some(_) => todo!(),
                     None => panic!("nope"),
@@ -352,6 +367,7 @@ fn eval_binary_operation(equation: Vec<Token>) -> Vec<Token> {
                     Some(_) => todo!(),
                     None => todo!(),
                 },
+                // need to add paren processing
                 Some(_) => todo!(),
                 None => todo!(),
             },
@@ -376,14 +392,16 @@ fn eval_binary_operation(equation: Vec<Token>) -> Vec<Token> {
 fn eval_exponent(equation: Vec<Token>) -> Vec<Token> {
     let mut equation_iter = equation.iter();
     let mut new_equation = Vec::new();
+    dbg!(equation.clone());
     while let Some(token) = equation_iter.next() {
         match token {
-            Token::Op(Operator::Exponent) => {
-                if let Some(Token::Constant(power)) = equation_iter.next() {
+            Token::Op(Operator::Exponent) => match equation_iter.next() {
+                Some(Token::Constant(power)) => {
                     let previous_token = new_equation.pop();
 
                     match previous_token {
                         Some(Token::RightParen) => {
+                            dbg!(new_equation.clone());
                             if let Some(Token::Constant(base)) = new_equation.pop() {
                                 let constant_value = base.powf(*power);
                                 new_equation.push(Token::Constant(constant_value));
@@ -398,7 +416,9 @@ fn eval_exponent(equation: Vec<Token>) -> Vec<Token> {
                         None => todo!(),
                     }
                 }
-            }
+                Some(_) => todo!(),
+                None => todo!(),
+            },
             _ => new_equation.push(token.clone()),
         }
     }
@@ -419,9 +439,18 @@ fn collapse_right(right: Vec<Token>, value: f32) -> f32 {
 
     let mut evaluated_tokens = evaluate_tokens(right, value);
 
+    dbg!(evaluated_tokens.clone());
+
     match evaluated_tokens.pop() {
         Some(Token::Constant(val)) => val,
-        Some(t) => todo!(),
+        Some(Token::RightParen) => {
+            if let Some(Token::Constant(val)) = evaluated_tokens.pop() {
+                val
+            } else {
+                panic!("nope")
+            }
+        }
+        Some(_) => todo!(),
         None => todo!(),
     }
 }
@@ -433,13 +462,6 @@ pub enum IndexedParen {
 }
 
 fn evaluate_tokens(tokens: Vec<Token>, value: f32) -> Vec<Token> {
-    // filter (maybe I should find to short circuit) map with index for parens
-    // pair parens
-    // get first deep nested paren pair and return indexes
-    // get slice of tokens
-    // do eval on that
-    // splice tokens (maybe copy it for now and see how it goes)
-    // repeat above until there are no pairs that are more than 2 indexes apart
     let mut ts = tokens.clone();
     loop {
         let unmatched_pairs = ts.iter().enumerate().filter_map(|(i, x)| match x {
@@ -449,8 +471,6 @@ fn evaluate_tokens(tokens: Vec<Token>, value: f32) -> Vec<Token> {
         });
 
         let (_d, mut pairs) = unmatched_pairs.fold((0, Vec::new()), |acc, x| {
-            // create tuples of option indexed parens (should this include depth? maybe this should
-            // be a type?)
             let (mut current_depth, mut current_pairs) = acc;
             match x {
                 IndexedParen::LeftParen(left_i) => {
@@ -533,6 +553,7 @@ fn evaluate_tokens(tokens: Vec<Token>, value: f32) -> Vec<Token> {
 
 fn do_eval(tokens: Vec<Token>, value: f32) -> Vec<Token> {
     let exponents_evaluated = eval_exponent(tokens);
+    dbg!(exponents_evaluated.clone());
     let multiply_evaluated = eval_multiply(exponents_evaluated);
     let division_evaluated = eval_divide(multiply_evaluated);
     let addition_evaluated = eval_add(division_evaluated);
@@ -647,6 +668,19 @@ mod tests {
             eval_exponent(input),
             vec![Token::LeftParen, Token::Constant(81.0), Token::RightParen,]
         );
+
+        let input = vec![
+            Token::LeftParen,
+            Token::Constant(2.0),
+            Token::RightParen,
+            Token::Op(Operator::Exponent),
+            Token::Constant(3.0),
+        ];
+
+        assert_eq!(
+            eval_exponent(input),
+            vec![Token::LeftParen, Token::Constant(8.0), Token::RightParen,]
+        );
     }
 
     #[test]
@@ -758,6 +792,19 @@ mod tests {
             Token::Constant(2.0),
         ];
         assert_eq!(eval_add(input), vec![Token::Constant(104.0),]);
+
+        let input = vec![
+            Token::LeftParen,
+            Token::Constant(8.0),
+            Token::RightParen,
+            Token::Op(Operator::Add),
+            Token::Constant(1.0),
+            Token::Op(Operator::Add),
+            Token::LeftParen,
+            Token::Constant(1.0),
+            Token::RightParen,
+        ];
+        assert_eq!(eval_add(input), vec![Token::Constant(10.0),]);
     }
 
     #[test]
