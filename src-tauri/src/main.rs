@@ -12,7 +12,6 @@ use std::rc::Rc;
 #[tauri::command]
 fn evaluate_equation(equation: &str) -> String {
     let result: Result<Vec<Token>, pom::Error> = expression().parse(equation.as_bytes());
-    dbg!(result);
     "".to_string()
 }
 
@@ -106,7 +105,6 @@ fn expression<'a>() -> Parser<'a, u8, Vec<Token>> {
 }
 
 fn substitute(equation: Vec<Token>, value: f32) -> Vec<Token> {
-    // let equation_used_for_find = equation.clone();
     let function = equation
         .iter()
         .find(|&el| matches!(el, Token::Function(_, _)))
@@ -165,8 +163,17 @@ fn eval_multiply(equation: Vec<Token>) -> Vec<Token> {
                             let constant_value = left * right;
                             new_equation.push(Token::Constant(constant_value));
                         }
-                        Some(_) => todo!(),
-                        None => todo!(),
+                        Some(t) => {
+                            new_equation.push(Token::LeftParen);
+                            new_equation.push(Token::Constant(left.clone()));
+                            new_equation.push(Token::RightParen);
+                            new_equation.push(t.clone());
+                        }
+                        None => {
+                            new_equation.push(Token::LeftParen);
+                            new_equation.push(Token::Constant(left.clone()));
+                            new_equation.push(Token::RightParen);
+                        }
                     },
                     Some(Token::Constant(left)) => match equation_iter.next() {
                         Some(Token::Constant(right)) => {
@@ -176,10 +183,7 @@ fn eval_multiply(equation: Vec<Token>) -> Vec<Token> {
                         Some(_) => todo!(),
                         None => todo!(),
                     },
-                    Some(t) => {
-                        dbg!(t.clone());
-                        ()
-                    }
+                    Some(t) => (),
                     None => new_equation.push(Token::Constant(left.clone())),
                 },
                 None => todo!(),
@@ -240,6 +244,63 @@ fn eval_binary_operation(equation: Vec<Token>) -> Vec<Token> {
     let mut new_equation = Vec::new();
     while let Some(token) = equation_iter.next() {
         match token {
+            Token::LeftParen => match equation_iter.next() {
+                Some(Token::Constant(left)) => match equation_iter.next() {
+                    Some(Token::RightParen) => match equation_iter.next() {
+                        Some(Token::Op(Operator::Divide)) => match equation_iter.next() {
+                            Some(Token::LeftParen) => {
+                                if let Some(Token::Constant(right)) = equation_iter.next() {
+                                    let constant_value = left / right;
+                                    let _unneeded_right_paren = equation_iter.next();
+                                    new_equation.push(Token::Constant(constant_value));
+                                };
+                            }
+                            Some(Token::Constant(right)) => {
+                                let constant_value = left / right;
+                                new_equation.push(Token::Constant(constant_value));
+                            }
+                            Some(_) => todo!(),
+                            None => todo!(),
+                        },
+                        Some(Token::Op(Operator::Add)) => match equation_iter.next() {
+                            Some(Token::LeftParen) => {
+                                if let Some(Token::Constant(right)) = equation_iter.next() {
+                                    let constant_value = left + right;
+                                    let _unneeded_right_paren = equation_iter.next();
+                                    new_equation.push(Token::Constant(constant_value));
+                                };
+                            }
+                            Some(Token::Constant(right)) => {
+                                let constant_value = left + right;
+                                new_equation.push(Token::Constant(constant_value));
+                            }
+                            Some(t) => new_equation.push(t.clone()),
+                            None => todo!(),
+                        },
+                        Some(Token::Op(Operator::Subtract)) => match equation_iter.next() {
+                            Some(Token::LeftParen) => {
+                                if let Some(Token::Constant(right)) = equation_iter.next() {
+                                    let constant_value = left - right;
+                                    let _unneeded_right_paren = equation_iter.next();
+                                    new_equation.push(Token::Constant(constant_value));
+                                };
+                            }
+                            Some(Token::Constant(right)) => {
+                                let constant_value = left - right;
+                                new_equation.push(Token::Constant(constant_value));
+                            }
+                            Some(_) => todo!(),
+                            None => todo!(),
+                        },
+                        Some(_) => todo!(),
+                        None => panic!("nope"),
+                    },
+                    Some(_) => todo!(),
+                    None => panic!("nope"),
+                },
+                Some(_) => todo!(),
+                None => panic!("nope"),
+            },
             Token::Constant(left) => match equation_iter.next() {
                 Some(Token::Op(Operator::Divide)) => match equation_iter.next() {
                     Some(Token::Constant(right)) => {
@@ -265,7 +326,9 @@ fn eval_binary_operation(equation: Vec<Token>) -> Vec<Token> {
                     Some(_) => todo!(),
                     None => todo!(),
                 },
-                Some(_) => todo!(),
+                Some(t) => {
+                    todo!();
+                }
                 None => new_equation.push(Token::Constant(left.clone())),
             },
             Token::Op(Operator::Divide) => match equation_iter.next() {
@@ -340,31 +403,8 @@ fn eval_exponent(equation: Vec<Token>) -> Vec<Token> {
         }
     }
     new_equation
-    //  right.iter().fold(
-    //      (None, 0.0),
-    //      |acc_val, token| match token {
-    //          Token::Constant(val) => {
-    //             match acc_val {
-    //                (Some(Token::Op(Operator::Add)),running_total) => (None, running_total + val),
-    //                (Some(Token::Op(Operator::Subtract)),running_total) => (None, running_total - val),
-    //                (Some(Token::Op(Operator::Multiply)),running_total) => (None, running_total * val),
-    //                (Some(Token::Op(Operator::Divide)),running_total) => (None, running_total / val),
-
-    //                (possible_op,running_total) => (possible_op, running_total),
-    //             }
-    //          },
-    //          Token::Op(op) => {
-    //             match acc_val {
-    //                (None,running_total) => (Some(Token::Op(op.clone())), running_total),
-    //                (Some(_), _) => todo!(),
-    //             }
-    //          },
-    //          _ => acc_val,
-    //      },
-    // //  ).1
 }
 fn collapse_right(right: Vec<Token>, value: f32) -> f32 {
-    // how do we apply parenthesis, exponent, multiply, division, addition, subtract
     let substituted = substitute(right, value);
 
     let mut sides: Vec<Vec<Token>> = Vec::new();
@@ -376,49 +416,6 @@ fn collapse_right(right: Vec<Token>, value: f32) -> f32 {
     }
 
     let right: Vec<Token> = sides.pop().unwrap();
-    // how can we recursively evaluate parens?
-    // (4(2)^2)/(2(2)-1)
-    // if we get to the 2nd parens then can we call eval?
-    // (
-    // 4
-    // (
-    // maybe we can check if all parens are single elems before eval exponent?
-    // you can check for a paren count and when they match call do eval on that?
-    // left paren
-    // 1
-    // cons
-    // left paren
-    // 2
-    // cons
-    // right paren
-    // 2 != 1
-    // expo
-    // cons
-    // sub
-    // cons
-    // right paren
-    // 2 == 2
-    // do eval on above terms
-    // put into new equation [
-    // left paren count = 0
-    // right paren count = 0
-    // while let Some(item) = iter() {
-    // terms_on_deck = []
-    // match item
-    // left paren count +=1
-    // right paren count +=1
-    // if equal then
-    // push into new equation
-    // create new terms on deck
-    // else
-    // push into new terms on deck
-    // how is this going to work with single elements (1)?
-    // (3)(3)
-    // [3][3]?????
-
-    //}
-    //let mut evaluated_tokens = do_eval(right, value);
-    //let tokens = right.iter();
 
     let mut evaluated_tokens = evaluate_tokens(right, value);
 
@@ -429,8 +426,109 @@ fn collapse_right(right: Vec<Token>, value: f32) -> f32 {
     }
 }
 
+#[derive(Clone, Debug, PartialEq)]
+pub enum IndexedParen {
+    LeftParen(usize),
+    RightParen(usize),
+}
+
 fn evaluate_tokens(tokens: Vec<Token>, value: f32) -> Vec<Token> {
-    do_eval(tokens, value)
+    // filter (maybe I should find to short circuit) map with index for parens
+    // pair parens
+    // get first deep nested paren pair and return indexes
+    // get slice of tokens
+    // do eval on that
+    // splice tokens (maybe copy it for now and see how it goes)
+    // repeat above until there are no pairs that are more than 2 indexes apart
+    let mut ts = tokens.clone();
+    loop {
+        let unmatched_pairs = ts.iter().enumerate().filter_map(|(i, x)| match x {
+            Token::LeftParen => Some(IndexedParen::LeftParen(i)),
+            Token::RightParen => Some(IndexedParen::RightParen(i)),
+            _ => None,
+        });
+
+        let (_d, mut pairs) = unmatched_pairs.fold((0, Vec::new()), |acc, x| {
+            // create tuples of option indexed parens (should this include depth? maybe this should
+            // be a type?)
+            let (mut current_depth, mut current_pairs) = acc;
+            match x {
+                IndexedParen::LeftParen(left_i) => {
+                    if current_pairs.is_empty() {
+                        current_pairs.push((Some(IndexedParen::LeftParen(left_i)), 0, None));
+                        (current_depth, current_pairs)
+                    } else {
+                        current_depth += 1;
+                        current_pairs.push((
+                            Some(IndexedParen::LeftParen(left_i)),
+                            current_depth,
+                            None,
+                        ));
+                        (current_depth, current_pairs)
+                    }
+                }
+                IndexedParen::RightParen(right_i) => {
+                    if current_pairs.is_empty() {
+                        panic!("No opening Left Paren!");
+                    } else {
+                        let pos = current_pairs
+                            .iter()
+                            .position(|(l_paren, d, r_paren)| {
+                                *d == current_depth && r_paren.is_none()
+                            })
+                            .unwrap();
+                        let mut_el = current_pairs.get_mut(pos).unwrap();
+                        mut_el.2 = Some(IndexedParen::RightParen(right_i));
+
+                        current_depth -= 1;
+                        (current_depth, current_pairs)
+                    }
+                }
+            }
+        });
+
+        let mut pairs_without_singles = pairs
+            .into_iter()
+            .filter(|x| {
+                let (left_p, _d, right_p) = x;
+                let left_i: usize = if let Some(IndexedParen::LeftParen(left_i)) = left_p {
+                    *left_i
+                } else {
+                    panic!("nope");
+                };
+                let right_i: usize = if let Some(IndexedParen::RightParen(right_i)) = right_p {
+                    *right_i
+                } else {
+                    panic!("nope")
+                };
+
+                let distance = right_i - left_i;
+                distance > 2
+            })
+            .collect::<Vec<(Option<IndexedParen>, i32, Option<IndexedParen>)>>();
+
+        if let Some((left_p, _d, right_p)) = pairs_without_singles.first_mut() {
+            let left_i: usize = if let Some(IndexedParen::LeftParen(left_i)) = left_p {
+                *left_i
+            } else {
+                panic!("nope");
+            };
+            let right_i: usize = if let Some(IndexedParen::RightParen(right_i)) = right_p {
+                *right_i
+            } else {
+                panic!("nope")
+            };
+            let slice_to_eval = &ts[left_i + 1..right_i];
+            let vec_to_eval = slice_to_eval.to_vec();
+            let res = do_eval(vec_to_eval, value);
+
+            ts.splice(left_i + 1..right_i, res);
+        } else {
+            break;
+        }
+    }
+
+    do_eval(ts, value)
 }
 
 fn do_eval(tokens: Vec<Token>, value: f32) -> Vec<Token> {
@@ -588,6 +686,29 @@ mod tests {
             Token::RightParen,
         ];
         assert_eq!(eval_multiply(input), vec![Token::Constant(18.0),]);
+
+        // no multiply operator still runs fine
+        let input = vec![
+            Token::LeftParen,
+            Token::Constant(9.0),
+            Token::RightParen,
+            Token::Op(Operator::Divide),
+            Token::LeftParen,
+            Token::Constant(2.0),
+            Token::RightParen,
+        ];
+        assert_eq!(
+            eval_multiply(input),
+            vec![
+                Token::LeftParen,
+                Token::Constant(9.0),
+                Token::RightParen,
+                Token::Op(Operator::Divide),
+                Token::LeftParen,
+                Token::Constant(2.0),
+                Token::RightParen,
+            ]
+        );
     }
 
     #[test]
@@ -607,6 +728,17 @@ mod tests {
             Token::Constant(2.0),
         ];
         assert_eq!(eval_divide(input), vec![Token::Constant(25.0),]);
+
+        let input = vec![
+            Token::LeftParen,
+            Token::Constant(100.0),
+            Token::RightParen,
+            Token::Op(Operator::Divide),
+            Token::LeftParen,
+            Token::Constant(2.0),
+            Token::RightParen,
+        ];
+        assert_eq!(eval_divide(input), vec![Token::Constant(50.0)]);
     }
 
     #[test]
@@ -666,6 +798,7 @@ mod tests {
 
     #[test]
     fn test_eval_fraction_parens_polynomial() {
+        // f(x)=(4x^2-1)/(3x+4)
         let input = vec![
             Token::Function("f".to_string(), Some(Rc::new(Token::Var("x".to_string())))),
             Token::Equal,
@@ -683,6 +816,7 @@ mod tests {
             Token::Var("x".to_string()),
             Token::Op(Operator::Add),
             Token::Constant(4.0),
+            Token::RightParen,
         ];
         assert_eq!(eval(input, 2.0), 1.5);
     }
