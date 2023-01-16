@@ -42,6 +42,12 @@ pub enum Operator {
     Modulo,
 }
 
+#[derive(Clone, Debug, PartialEq)]
+pub enum IndexedParen {
+    LeftParen(usize),
+    RightParen(usize),
+}
+
 fn eval(tokens: Vec<Token>, value: f32) -> f32 {
     collapse_right(tokens, value)
 }
@@ -459,6 +465,48 @@ fn eval_exponent(equation: Vec<Token>) -> Vec<Token> {
     }
     new_equation
 }
+
+fn simplify(equation: Vec<Token>) -> Vec<Token> {
+    let mut new_equation: Vec<Token> = Vec::new();
+    let mut eq_iter = equation.iter();
+    while let Some(token) = eq_iter.next() {
+        match token {
+            Token::Op(Operator::Subtract) => match new_equation.pop() {
+                Some(Token::Op(Operator::Subtract)) => {
+                    new_equation.push(Token::Op(Operator::Add));
+                }
+                Some(Token::LeftParen) => match new_equation.pop() {
+                    Some(Token::Op(Operator::Subtract)) => {
+                        new_equation.push(Token::Op(Operator::Add));
+                        new_equation.push(Token::LeftParen);
+                    }
+                    None => {
+                        new_equation.push(Token::LeftParen);
+                        new_equation.push(Token::Op(Operator::Subtract));
+                    }
+                    Some(t) => {
+                        new_equation.push(t.clone());
+                        new_equation.push(Token::LeftParen);
+                        new_equation.push(Token::Op(Operator::Subtract));
+                    }
+                },
+                Some(t) => {
+                    new_equation.push(t.clone());
+                    new_equation.push(Token::Op(Operator::Subtract));
+                }
+                None => {
+                    new_equation.push(Token::Op(Operator::Subtract));
+                }
+            },
+            t => {
+                new_equation.push(t.clone());
+            }
+        }
+    }
+
+    new_equation
+}
+
 fn collapse_right(right: Vec<Token>, value: f32) -> f32 {
     let substituted = substitute(right, value);
 
@@ -472,7 +520,7 @@ fn collapse_right(right: Vec<Token>, value: f32) -> f32 {
 
     let right: Vec<Token> = sides.pop().unwrap();
 
-    let mut evaluated_tokens = evaluate_tokens(right, value);
+    let mut evaluated_tokens = evaluate_tokens(right);
 
     match evaluated_tokens.pop() {
         Some(Token::Constant(val)) => val,
@@ -488,13 +536,7 @@ fn collapse_right(right: Vec<Token>, value: f32) -> f32 {
     }
 }
 
-#[derive(Clone, Debug, PartialEq)]
-pub enum IndexedParen {
-    LeftParen(usize),
-    RightParen(usize),
-}
-
-fn evaluate_tokens(tokens: Vec<Token>, value: f32) -> Vec<Token> {
+fn evaluate_tokens(tokens: Vec<Token>) -> Vec<Token> {
     let mut ts = tokens.clone();
     loop {
         let unmatched_pairs = ts.iter().enumerate().filter_map(|(i, x)| match x {
@@ -503,7 +545,7 @@ fn evaluate_tokens(tokens: Vec<Token>, value: f32) -> Vec<Token> {
             _ => None,
         });
 
-        let (_d, mut pairs) = unmatched_pairs.fold((0, Vec::new()), |acc, x| {
+        let (_d, pairs) = unmatched_pairs.fold((0, Vec::new()), |acc, x| {
             let (mut current_depth, mut current_pairs) = acc;
             match x {
                 IndexedParen::LeftParen(left_i) => {
@@ -573,7 +615,7 @@ fn evaluate_tokens(tokens: Vec<Token>, value: f32) -> Vec<Token> {
             };
             let slice_to_eval = &ts[left_i + 1..right_i];
             let vec_to_eval = slice_to_eval.to_vec();
-            let res = do_eval(vec_to_eval, value);
+            let res = do_eval(vec_to_eval);
 
             ts.splice(left_i + 1..right_i, res);
         } else {
@@ -581,10 +623,10 @@ fn evaluate_tokens(tokens: Vec<Token>, value: f32) -> Vec<Token> {
         }
     }
 
-    do_eval(ts, value)
+    do_eval(ts)
 }
 
-fn do_eval(tokens: Vec<Token>, value: f32) -> Vec<Token> {
+fn do_eval(tokens: Vec<Token>) -> Vec<Token> {
     let exponents_evaluated = eval_exponent(tokens);
     let multiply_evaluated = eval_multiply(exponents_evaluated);
     let division_evaluated = eval_divide(multiply_evaluated);
@@ -673,6 +715,64 @@ mod tests {
                 Token::RightParen,
                 Token::Op(Operator::Exponent),
                 Token::Constant(2.0),
+            ]
+        );
+    }
+
+    #[test]
+    fn test_simplify_double_neg_with_parens() {
+        let input = vec![
+            Token::Function("f".to_string(), Some(Rc::new(Token::Var("x".to_string())))),
+            Token::Equal,
+            Token::Constant(4.0),
+            Token::Var("x".to_string()),
+            Token::Op(Operator::Subtract),
+            Token::LeftParen,
+            Token::Op(Operator::Subtract),
+            Token::Constant(1.0),
+            Token::RightParen,
+        ];
+
+        assert_eq!(
+            simplify(input),
+            vec![
+                Token::Function("f".to_string(), Some(Rc::new(Token::Var("x".to_string())))),
+                Token::Equal,
+                Token::Constant(4.0),
+                Token::Var("x".to_string()),
+                Token::Op(Operator::Add),
+                Token::LeftParen,
+                Token::Constant(1.0),
+                Token::RightParen,
+            ]
+        );
+    }
+
+    #[test]
+    fn test_simplify_double_pos_with_parens() {
+        let input = vec![
+            Token::Function("f".to_string(), Some(Rc::new(Token::Var("x".to_string())))),
+            Token::Equal,
+            Token::Constant(4.0),
+            Token::Var("x".to_string()),
+            Token::Op(Operator::Add),
+            Token::LeftParen,
+            Token::Op(Operator::Add),
+            Token::Constant(1.0),
+            Token::RightParen,
+        ];
+
+        assert_eq!(
+            simplify(input),
+            vec![
+                Token::Function("f".to_string(), Some(Rc::new(Token::Var("x".to_string())))),
+                Token::Equal,
+                Token::Constant(4.0),
+                Token::Var("x".to_string()),
+                Token::Op(Operator::Add),
+                Token::LeftParen,
+                Token::Constant(1.0),
+                Token::RightParen,
             ]
         );
     }
