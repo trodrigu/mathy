@@ -471,6 +471,33 @@ fn simplify(equation: Vec<Token>) -> Vec<Token> {
     let mut eq_iter = equation.iter();
     while let Some(token) = eq_iter.next() {
         match token {
+            Token::Op(Operator::Add) => match new_equation.pop() {
+                Some(Token::Op(Operator::Add)) => {
+                    new_equation.push(Token::Op(Operator::Add));
+                }
+                Some(Token::LeftParen) => match new_equation.pop() {
+                    Some(Token::Op(Operator::Add)) => {
+                        new_equation.push(Token::Op(Operator::Add));
+                        new_equation.push(Token::LeftParen);
+                    }
+                    None => {
+                        new_equation.push(Token::LeftParen);
+                        new_equation.push(Token::Op(Operator::Add));
+                    }
+                    Some(t) => {
+                        new_equation.push(t.clone());
+                        new_equation.push(Token::LeftParen);
+                        new_equation.push(Token::Op(Operator::Add));
+                    }
+                },
+                Some(t) => {
+                    new_equation.push(t.clone());
+                    new_equation.push(Token::Op(Operator::Add));
+                }
+                None => {
+                    new_equation.push(Token::Op(Operator::Add));
+                }
+            },
             Token::Op(Operator::Subtract) => match new_equation.pop() {
                 Some(Token::Op(Operator::Subtract)) => {
                     new_equation.push(Token::Op(Operator::Add));
@@ -508,7 +535,8 @@ fn simplify(equation: Vec<Token>) -> Vec<Token> {
 }
 
 fn collapse_right(right: Vec<Token>, value: f32) -> f32 {
-    let substituted = substitute(right, value);
+    let simplified = simplify(right);
+    let substituted = substitute(simplified, value);
 
     let mut sides: Vec<Vec<Token>> = Vec::new();
 
