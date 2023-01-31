@@ -129,6 +129,7 @@ impl Token {
             (Token::Add(_,_), Type::Number(inner_c1), Type::Number(inner_c2)) => Ok(Token::Complex(inner_c1 + inner_c2)),
             (Token::Subtract(_,_), Type::Number(inner_c1), Type::Number(inner_c2)) => Ok(Token::Complex(inner_c1 - inner_c2)),
             (Token::Multiply(_,_), Type::Number(inner_c1), Type::Number(inner_c2)) => Ok(Token::Complex(inner_c1 * inner_c2)),
+            (Token::Divide(_,_), Type::Number(inner_c1), Type::Number(inner_c2)) => Ok(Token::Complex(inner_c1 / inner_c2)),
             _ => todo!("hi"),
         }
     }
@@ -136,7 +137,7 @@ impl Token {
     fn eval_step(&self) -> Result<Self, Error> {
         let expr = &self;
         match expr {
-            Token::Add(c1, c2) | Token::Subtract(c1, c2) | Token::Multiply(c1, c2) => expr.eval_step_binary(c1, c2),
+            Token::Add(c1, c2) | Token::Subtract(c1, c2) | Token::Multiply(c1, c2) | Token::Divide(c1, c2) => expr.eval_step_binary(c1, c2),
             Token::Complex(c) => Ok(Token::Complex(*c)),
             t => {
                 dbg!(t.clone());
@@ -234,6 +235,7 @@ fn variable<'a>() -> Parser<'a, u8, Token> {
         .repeat(1..)
         .collect()
         .convert(|sy| (String::from_utf8(sy.to_vec())))
+        .name("variable")
         .map(Token::Var)
 }
 //fn right_paren<'a>() -> Parser<'a, u8, Token> {
@@ -251,6 +253,7 @@ fn number<'a>() -> Parser<'a, u8, Token> {
     let exp = one_of(b"eE") + one_of(b"+-").opt() + one_of(b"0123456789").repeat(1..);
     let number = integer + frac.opt() + exp.opt();
     number
+        .name("number")
         .collect()
         .convert(|v| String::from_utf8(v.to_vec()))
         .convert(|s| s.parse::<Complex>())
@@ -279,52 +282,127 @@ fn function_name<'a>() -> Parser<'a, u8, String> {
         .convert(|sy| (String::from_utf8(sy.to_vec())))
 }
 
+
+fn trailing_atomic_expr<'a>() -> Parser<'a, u8, Token> {
+    let p = number()  + one_of(b"+-*/^%") + sym(b'(') + call(expression) + sym(b')');
+    p.name("trailing_atomic_expr").map(|((((expr1, op), _left_paren), expr2), _right_paren)| {
+        match op {
+            b'*' => {
+                match expr2 {
+                    Token::Divide(l, r) => {
+                        Token::Add(Box::new(expr1), Box::new(Token::Divide(l, r)))
+                    },
+                    Token::Add(l, r) => {
+                        Token::Divide(Box::new(expr1), Box::new(Token::Add(l, r)))
+                    },
+                    Token::Subtract(l, r) => {
+                        Token::Divide(Box::new(expr1), Box::new(Token::Subtract(l, r)))
+                    },
+                    _ => todo!("nooo"),
+                }
+                
+            },
+            b'/' => {
+                match expr2 {
+                    Token::Multiply(l, r) => {
+                        Token::Divide(Box::new(expr1), Box::new(Token::Multiply(l, r)))
+                    },
+                    Token::Add(l, r) => {
+                        Token::Divide(Box::new(expr1), Box::new(Token::Add(l, r)))
+                    },
+                    Token::Subtract(l, r) => {
+                        Token::Divide(Box::new(expr1), Box::new(Token::Subtract(l, r)))
+                    },
+                    _ => todo!("nooo"),
+                }
+                
+            },
+            b'+' => {
+                match expr2 {
+                    Token::Multiply(l, r) => {
+                        Token::Add(Box::new(expr1), Box::new(Token::Multiply(l, r)))
+                    },
+                    Token::Divide(l, r) => {
+                        Token::Add(Box::new(expr1), Box::new(Token::Divide(l, r)))
+                    },
+                    Token::Subtract(l, r) => {
+                        Token::Add(Box::new(expr1), Box::new(Token::Subtract(l, r)))
+                    },
+                    _ => todo!("nooo"),
+                }
+                
+            },
+            t => {
+                dbg!(std::str::from_utf8(&[t]).clone());
+                todo!("noooo")
+            },
+        }
+    })
+}
+fn leading_atomic_expr<'a>() -> Parser<'a, u8, Token> {
+    let p = sym(b'(') + call(expression) + sym(b')') + one_of(b"+-*/^%") + call(expression);
+    p.name("leading_atomic_expr").map(|((((_left_paren, expr1), _right_paren), op), expr2)| {
+        match op {
+            b'/' => {
+                match expr2 {
+                    Token::Complex(c) => Token::Divide(Box::new(expr1), Box::new(Token::Complex(c))),
+                    _ => todo!("nooo"),
+                }
+                
+            },
+            b'*' => {
+                match expr2 {
+                    Token::Complex(c) => Token::Multiply(Box::new(expr1), Box::new(Token::Complex(c))),
+                    _ => todo!("nooo"),
+                }
+                
+            },
+            b'+' => {
+                match expr2 {
+                    Token::Complex(c) => Token::Add(Box::new(expr1), Box::new(Token::Complex(c))),
+                    _ => todo!("nooo"),
+                }
+                
+            },
+            t => {
+                //dbg!(t.clone());
+                dbg!(std::str::from_utf8(&[t]).clone());
+
+                todo!("noooo")
+            },
+        }
+    })
+}
+
 fn operator<'a>() -> Parser<'a, u8, Token> {
-    //           1            +                     1
-    //           1-2          +                     1
-    //           try to parse expression before number
-    //           ((2*3)-2)
-    //let parser1 = call(expression) + one_of(b"*/") + number();
-    let parser = number() + one_of(b"+-*/^%") + call(expression);
-    //let parser2 = call(expression) + one_of(b"*/") + number();
-    (parser).map(|((l, op), r)| {
-        dbg!(l.clone());
-        dbg!(std::str::from_utf8(&[op]).clone());
-        dbg!(r.clone());
+    let mut parser = number() + one_of(b"+-*/^%") + call(expression);
+    parser.name("regular_operator").map(|((l, op), r)| {
+        //dbg!(l.clone());
+        //dbg!(std::str::from_utf8(&[op]).clone());
+        //dbg!(r.clone());
 
         match op {
             b'+' => Token::Add(Box::new(l), Box::new(r)),
             b'-' => Token::Subtract(Box::new(l), Box::new(r)),
-            //b'*' => Token::Multiply(Box::new(l), Box::new(r)),
             b'*' => {
                 match (l,r) {
-                    (Token::Complex(c1), r) => {
-                        match r {
-                            Token::Complex(c2) => {
-                                Token::Multiply(Box::new(Token::Complex(c1.clone())), Box::new(Token::Complex(c2.clone())))
-                            },
-
-                            Token::Add(inner_l, inner_r) => {
-                                Token::Add(Box::new(Token::Multiply(Box::new(Token::Complex(c1.clone())), inner_l)), inner_r)
-                            },
-                            Token::Subtract(inner_l, inner_r) => {
-                                Token::Subtract(Box::new(Token::Multiply(Box::new(Token::Complex(c1.clone())), inner_l)), inner_r)
-                            },
-                            Token::Multiply(inner_l, inner_r) => {
-                                Token::Multiply(Box::new(Token::Multiply(Box::new(Token::Complex(c1.clone())), inner_l)), inner_r)
-                            },
-                            _ => todo!("nopes")
-                        }
-                    },
-                    (l, Token::Complex(c1)) => {
-                        match l {
-                            Token::Complex(c2) => {
-                                Token::Multiply(Box::new(Token::Complex(c2.clone())), Box::new(Token::Complex(c1.clone())))
-                            },
-                            _ => todo!("hi inside"),
-                        }
-                    },
-                    //Token::Add(inner_l, inner_r) => Token::Add(Box::new(Token::Multiply(Box::new(l), inner_l.clone())), inner_r.clone()),
+                    (Token::Complex(c1), Token::Complex(c2)) => Token::Multiply(Box::new(Token::Complex(c1.clone())), Box::new(Token::Complex(c2.clone()))),
+                    (Token::Complex(c1), Token::Add(inner_l, inner_r)) => Token::Add(Box::new(Token::Multiply(Box::new(Token::Complex(c1.clone())), inner_l)), inner_r),
+                    (Token::Complex(c1), Token::Subtract(inner_l, inner_r)) => Token::Subtract(Box::new(Token::Multiply(Box::new(Token::Complex(c1.clone())), inner_l)), inner_r),
+                    (Token::Complex(c1), Token::Multiply(inner_l, inner_r)) => Token::Multiply(Box::new(Token::Multiply(Box::new(Token::Complex(c1.clone())), inner_l)), inner_r),
+                    (l,r) => {
+                        //dbg!(l.clone());
+                        todo!("hi");
+                    }
+                }
+                
+            },
+            b'/' => {
+                match (l,r) {
+                    (Token::Complex(c1), Token::Complex(c2)) => Token::Divide(Box::new(Token::Complex(c1.clone())), Box::new(Token::Complex(c2.clone()))),
+                    (Token::Complex(c1), Token::Add(inner_l, inner_r)) => Token::Add(Box::new(Token::Divide(Box::new(Token::Complex(c1.clone())), inner_l)), inner_r),
+                    (Token::Complex(c1), Token::Subtract(inner_l, inner_r)) => Token::Subtract(Box::new(Token::Divide(Box::new(Token::Complex(c1.clone())), inner_l)), inner_r),
+                    (Token::Complex(c1), Token::Divide(inner_l, inner_r)) => Token::Divide(Box::new(Token::Divide(Box::new(Token::Complex(c1.clone())), inner_l)), inner_r),
                     (l,r) => {
                         dbg!(l.clone());
                         todo!("hi");
@@ -332,7 +410,6 @@ fn operator<'a>() -> Parser<'a, u8, Token> {
                 }
                 
             },
-            b'/' => Token::Divide(Box::new(l), Box::new(r)),
             b'^' => Token::Exponent(Box::new(l), Box::new(r)),
             b'%' => Token::Modulo(Box::new(l), Box::new(r)),
             _ => Token::Exponent(Box::new(l), Box::new(r)),
@@ -342,484 +419,12 @@ fn operator<'a>() -> Parser<'a, u8, Token> {
 
 // this is like value in json parser
 fn expression<'a>() -> Parser<'a, u8, Token> {
-    operator() | number() | variable()
+    trailing_atomic_expr() | leading_atomic_expr() | operator()  | variable() | number()
 }
 
-fn te<'a>() -> Parser<'a, u8, Token> {
-    operator() - end()
+fn total_expr<'a>() -> Parser<'a, u8, Token> {
+    expression() - end()
 }
-
-//fn substitute(equation: Vec<Token>, value: f32) -> Vec<Token> {
-    //let function = equation
-        //.iter()
-        //.find(|&el| matches!(el, Token::Function(_, _)))
-        //.unwrap();
-
-    //let var = match function {
-        //Token::Function(_function_name, rc_var) => rc_var.as_ref(),
-        //_ => todo!(),
-    //};
-
-    //let var_name = match var {
-        //Token::Var(name) => name,
-        //_ => todo!(),
-    //};
-
-    //let mut new_equation: Vec<Token> = Vec::new();
-    //let mut eq_iter = equation.iter();
-    //while let Some(token) = eq_iter.next() {
-        //match token {
-            //Token::Var(name) => {
-                //if name == var_name {
-                    //new_equation.push(Token::LeftParen);
-                    //new_equation.push(Token::Constant(value));
-                    //new_equation.push(Token::RightParen);
-                //}
-            //}
-            //_ => new_equation.push(token.clone()),
-        //}
-    //}
-
-    //new_equation
-        //.iter()
-        //.map(|el| match el {
-            //Token::Function(name, _var) => Token::FunctionValue(name.clone(), value),
-            //_ => el.clone(),
-        //})
-        //.collect::<Vec<Token>>()
-//}
-
-//fn eval_multiply(equation: Vec<Token>) -> Vec<Token> {
-//let mut equation_iter = equation.iter();
-//let mut new_equation = Vec::new();
-//while let Some(token) = equation_iter.next() {
-//match token {
-//Token::LeftParen => match equation_iter.next() {
-//Some(Token::Constant(left)) => match equation_iter.next() {
-//Some(Token::RightParen) => match equation_iter.next() {
-//Some(Token::LeftParen) => {
-//if let Some(Token::Constant(right)) = equation_iter.next() {
-//let constant_value = left * right;
-//let _unneeded_right_paren = equation_iter.next();
-//new_equation.push(Token::Constant(constant_value));
-//};
-//}
-//Some(Token::Constant(right)) => {
-//let constant_value = left * right;
-//new_equation.push(Token::Constant(constant_value));
-//}
-//Some(t) => {
-//new_equation.push(Token::LeftParen);
-//new_equation.push(Token::Constant(left.clone()));
-//new_equation.push(Token::RightParen);
-//new_equation.push(t.clone());
-//}
-//None => {
-//new_equation.push(Token::LeftParen);
-//new_equation.push(Token::Constant(left.clone()));
-//new_equation.push(Token::RightParen);
-//}
-//},
-//Some(Token::Constant(left)) => match equation_iter.next() {
-//Some(Token::Constant(right)) => {
-//let constant_value = left * right;
-//new_equation.push(Token::Constant(constant_value));
-//}
-//Some(_) => todo!(),
-//None => todo!(),
-//},
-//Some(_) => todo!(),
-//None => new_equation.push(Token::Constant(left.clone())),
-//},
-//None => todo!(),
-//Some(_) => todo!(),
-//},
-//Token::Constant(left) => match equation_iter.next() {
-//Some(Token::LeftParen) => match equation_iter.next() {
-//Some(Token::Constant(right)) => {
-//let constant_value = left * right;
-//let _unneeded_right_paren = equation_iter.next();
-//new_equation.push(Token::Constant(constant_value));
-//}
-//Some(_) => todo!(),
-//None => todo!(),
-//},
-//Some(Token::Constant(left)) => match equation_iter.next() {
-//Some(Token::Constant(right)) => {
-//let constant_value = left * right;
-//new_equation.push(Token::Constant(constant_value));
-//}
-//Some(_) => todo!(),
-//None => todo!(),
-//},
-//Some(Token::Op(Operator::Multiply)) => match equation_iter.next() {
-//Some(Token::Constant(right)) => {
-//let constant_value = left * *right;
-//new_equation.push(Token::Constant(constant_value));
-//}
-//Some(_) => todo!(),
-//None => todo!(),
-//},
-//Some(t) => {
-//new_equation.push(Token::Constant(left.clone()));
-//new_equation.push(t.clone())
-//}
-//None => new_equation.push(Token::Constant(left.clone())),
-//},
-//t => new_equation.push(t.clone()),
-//}
-//}
-//new_equation
-//}
-
-//fn eval_divide(equation: Vec<Token>) -> Vec<Token> {
-//eval_binary_operation(equation)
-//}
-
-//fn eval_add(equation: Vec<Token>) -> Vec<Token> {
-//eval_binary_operation(equation)
-//}
-
-//fn eval_subtract(equation: Vec<Token>) -> Vec<Token> {
-//eval_binary_operation(equation)
-//}
-
-//fn eval_binary_operation(equation: Vec<Token>) -> Vec<Token> {
-//let mut equation_iter = equation.iter();
-//let mut new_equation = Vec::new();
-//while let Some(token) = equation_iter.next() {
-//match token {
-//Token::LeftParen => match equation_iter.next() {
-//Some(Token::Constant(left)) => match equation_iter.next() {
-//Some(Token::RightParen) => match equation_iter.next() {
-//Some(Token::Op(Operator::Divide)) => match equation_iter.next() {
-//Some(Token::LeftParen) => {
-//if let Some(Token::Constant(right)) = equation_iter.next() {
-//let constant_value = left / right;
-//let _unneeded_right_paren = equation_iter.next();
-//new_equation.push(Token::Constant(constant_value));
-//};
-//}
-//Some(Token::Constant(right)) => {
-//let constant_value = left / right;
-//new_equation.push(Token::Constant(constant_value));
-//}
-//Some(_) => todo!(),
-//None => todo!(),
-//},
-//Some(Token::Op(Operator::Add)) => match equation_iter.next() {
-//Some(Token::LeftParen) => {
-//if let Some(Token::Constant(right)) = equation_iter.next() {
-//let constant_value = left + right;
-//let _unneeded_right_paren = equation_iter.next();
-//new_equation.push(Token::Constant(constant_value));
-//};
-//}
-//Some(Token::Constant(right)) => {
-//let constant_value = left + right;
-//new_equation.push(Token::Constant(constant_value));
-//}
-//Some(t) => new_equation.push(t.clone()),
-//None => todo!(),
-//},
-//Some(Token::Op(Operator::Subtract)) => match equation_iter.next() {
-//Some(Token::LeftParen) => {
-//if let Some(Token::Constant(right)) = equation_iter.next() {
-//let constant_value = left - right;
-//let _unneeded_right_paren = equation_iter.next();
-//new_equation.push(Token::Constant(constant_value));
-//};
-//}
-//Some(Token::Constant(right)) => {
-//let constant_value = left - right;
-//new_equation.push(Token::Constant(constant_value));
-//}
-//Some(_) => todo!(),
-//None => todo!(),
-//},
-//Some(t) => {
-//new_equation.push(Token::LeftParen);
-//new_equation.push(Token::Constant(left.clone()));
-//new_equation.push(Token::RightParen);
-//new_equation.push(t.clone());
-//}
-//None => {
-//new_equation.push(Token::LeftParen);
-//new_equation.push(Token::Constant(left.clone()));
-//new_equation.push(Token::RightParen);
-//}
-//},
-//Some(_) => todo!(),
-//None => panic!("nope"),
-//},
-//Some(_) => todo!(),
-//None => panic!("nope"),
-//},
-//Token::Constant(left) => match equation_iter.next() {
-//Some(Token::Op(Operator::Divide)) => match equation_iter.next() {
-//Some(Token::Constant(right)) => {
-//let constant_value = left / right;
-//new_equation.push(Token::Constant(constant_value));
-//}
-//Some(_) => todo!(),
-//None => todo!(),
-//},
-//Some(Token::Op(Operator::Add)) => match equation_iter.next() {
-//Some(Token::Constant(right)) => {
-//let constant_value = left + right;
-//new_equation.push(Token::Constant(constant_value));
-//}
-//Some(t) => new_equation.push(t.clone()),
-//None => todo!(),
-//},
-//Some(Token::Op(Operator::Subtract)) => match equation_iter.next() {
-//Some(Token::Constant(right)) => {
-//let constant_value = left - right;
-//new_equation.push(Token::Constant(constant_value));
-//}
-//Some(_) => todo!(),
-//None => todo!(),
-//},
-//Some(t) => {
-//todo!();
-//}
-//None => new_equation.push(Token::Constant(left.clone())),
-//},
-//Token::Op(Operator::Divide) => match equation_iter.next() {
-//Some(Token::Constant(left)) => match new_equation.pop() {
-//Some(Token::Constant(last_val)) => {
-//let constant_value = last_val / left;
-//new_equation.push(Token::Constant(constant_value));
-//}
-//Some(_) => todo!(),
-//None => todo!(),
-//},
-//Some(Token::LeftParen) => match equation_iter.next() {
-//Some(Token::Constant(left)) => match new_equation.pop() {
-//Some(Token::Constant(last_val)) => {
-//let constant_value = last_val / left;
-//new_equation.push(Token::Constant(constant_value));
-//let _unneeded_right_paren = equation_iter.next();
-//}
-//Some(_) => todo!(),
-//None => todo!(),
-//},
-//Some(_) => todo!(),
-//None => todo!(),
-//},
-//Some(_) => todo!(),
-//None => todo!(),
-//},
-//Token::Op(Operator::Add) => match equation_iter.next() {
-//Some(Token::Constant(left)) => match new_equation.pop() {
-//Some(Token::Constant(last_val)) => {
-//let constant_value = last_val + left;
-//new_equation.push(Token::Constant(constant_value));
-//}
-//Some(_) => todo!(),
-//None => todo!(),
-//},
-//Some(Token::LeftParen) => match equation_iter.next() {
-//Some(Token::Constant(left)) => match new_equation.pop() {
-//Some(Token::Constant(last_val)) => {
-//let constant_value = last_val + left;
-//new_equation.push(Token::Constant(constant_value));
-//let _unneeded_right_paren = equation_iter.next();
-//}
-//Some(_) => todo!(),
-//None => todo!(),
-//},
-//Some(_) => todo!(),
-//None => todo!(),
-//},
-//Some(t) => todo!(),
-//None => todo!(),
-//},
-//Token::Op(Operator::Subtract) => match equation_iter.next() {
-//Some(Token::Constant(left)) => match new_equation.pop() {
-//Some(Token::Constant(last_val)) => {
-//let constant_value = last_val - left;
-//new_equation.push(Token::Constant(constant_value));
-//}
-//Some(t) => new_equation.push(t),
-//None => todo!(),
-//},
-//Some(Token::LeftParen) => match equation_iter.next() {
-//Some(Token::Constant(left)) => match new_equation.pop() {
-//Some(Token::Constant(last_val)) => {
-//let constant_value = last_val + left;
-//new_equation.push(Token::Constant(constant_value));
-//let _unneeded_right_paren = equation_iter.next();
-//}
-//Some(_) => todo!(),
-//None => todo!(),
-//},
-//Some(_) => todo!(),
-//None => todo!(),
-//},
-//Some(_) => todo!(),
-//None => todo!(),
-//},
-//_ => new_equation.push(token.clone()),
-//}
-//}
-//new_equation
-//}
-
-//fn eval_exponent(equation: Vec<Token>) -> Vec<Token> {
-//let mut equation_iter = equation.iter();
-//let mut new_equation = Vec::new();
-//while let Some(token) = equation_iter.next() {
-//match token {
-//Token::Op(Operator::Exponent) => match equation_iter.next() {
-//Some(Token::Constant(power)) => {
-//let previous_token = new_equation.pop();
-
-//match previous_token {
-//Some(Token::RightParen) => {
-//if let Some(Token::Constant(base)) = new_equation.pop() {
-//let constant_value = base.powf(*power);
-//new_equation.push(Token::Constant(constant_value));
-//new_equation.push(Token::RightParen);
-//}
-//}
-//Some(Token::Constant(base)) => {
-//let constant_value = base.powf(*power);
-//new_equation.push(Token::Constant(constant_value));
-//}
-//Some(_) => todo!(),
-//None => todo!(),
-//}
-//}
-//Some(_) => todo!(),
-//None => todo!(),
-//},
-//_ => new_equation.push(token.clone()),
-//}
-//}
-//new_equation
-//}
-
-//fn simplify(equation: Token) -> Vec<Token> {}
-
-//fn collapse_right(right: Token, value: f32) -> f32 {
-
-////let simplified = simplify(right);
-////let substituted = substitute(simplified, value);
-
-////let mut evaluated_tokens = evaluate_tokens(substituted);
-
-////match evaluated_tokens.pop() {
-////Some(Token::Constant(val)) => val,
-////Some(Token::RightParen) => {
-////if let Some(Token::Constant(val)) = evaluated_tokens.pop() {
-////val
-////} else {
-////panic!("nope")
-////}
-////}
-////Some(_) => todo!(),
-////None => todo!(),
-////}
-//}
-
-//fn evaluate_tokens(tokens: Vec<Token>) -> Vec<Token> {
-//let mut ts = tokens.clone();
-//loop {
-//let unmatched_pairs = ts.iter().enumerate().filter_map(|(i, x)| match x {
-//Token::LeftParen => Some(IndexedParen::LeftParen(i)),
-//Token::RightParen => Some(IndexedParen::RightParen(i)),
-//_ => None,
-//});
-
-//let (_d, pairs) = unmatched_pairs.fold((0, Vec::new()), |acc, x| {
-//let (mut current_depth, mut current_pairs) = acc;
-//match x {
-//IndexedParen::LeftParen(left_i) => {
-//if current_pairs.is_empty() {
-//current_pairs.push((Some(IndexedParen::LeftParen(left_i)), 0, None));
-//(current_depth, current_pairs)
-//} else {
-//current_depth += 1;
-//current_pairs.push((
-//Some(IndexedParen::LeftParen(left_i)),
-//current_depth,
-//None,
-//));
-//(current_depth, current_pairs)
-//}
-//}
-//IndexedParen::RightParen(right_i) => {
-//if current_pairs.is_empty() {
-//panic!("No opening Left Paren!");
-//} else {
-//let pos = current_pairs
-//.iter()
-//.position(|(l_paren, d, r_paren)| {
-//*d == current_depth && r_paren.is_none()
-//})
-//.unwrap();
-//let mut_el = current_pairs.get_mut(pos).unwrap();
-//mut_el.2 = Some(IndexedParen::RightParen(right_i));
-
-//current_depth -= 1;
-//(current_depth, current_pairs)
-//}
-//}
-//}
-//});
-
-//let mut pairs_without_singles = pairs
-//.into_iter()
-//.filter(|x| {
-//let (left_p, _d, right_p) = x;
-//let left_i: usize = if let Some(IndexedParen::LeftParen(left_i)) = left_p {
-//*left_i
-//} else {
-//panic!("nope");
-//};
-//let right_i: usize = if let Some(IndexedParen::RightParen(right_i)) = right_p {
-//*right_i
-//} else {
-//panic!("nope")
-//};
-
-//let distance = right_i - left_i;
-//distance > 2
-//})
-//.collect::<Vec<(Option<IndexedParen>, i32, Option<IndexedParen>)>>();
-
-//if let Some((left_p, _d, right_p)) = pairs_without_singles.first_mut() {
-//let left_i: usize = if let Some(IndexedParen::LeftParen(left_i)) = left_p {
-//*left_i
-//} else {
-//panic!("nope");
-//};
-//let right_i: usize = if let Some(IndexedParen::RightParen(right_i)) = right_p {
-//*right_i
-//} else {
-//panic!("nope")
-//};
-//let slice_to_eval = &ts[left_i + 1..right_i];
-//let vec_to_eval = slice_to_eval.to_vec();
-//let res = do_eval(vec_to_eval);
-
-//ts.splice(left_i + 1..right_i, res);
-//} else {
-//break;
-//}
-//}
-
-//do_eval(ts)
-//}
-
-//fn do_eval(tokens: Vec<Token>) -> Vec<Token> {
-//let exponents_evaluated = eval_exponent(tokens);
-//let multiply_evaluated = eval_multiply(exponents_evaluated);
-//let division_evaluated = eval_divide(multiply_evaluated);
-//let addition_evaluated = eval_add(division_evaluated);
-//eval_subtract(addition_evaluated)
-//}
 
 fn main() {
     tauri::Builder::default()
@@ -846,7 +451,7 @@ mod tests {
 
     #[test]
     fn test_parse_simple_int() {
-        t(b"2+3-4", Token::Complex(Complex::new(1.0, 0.0)));
+        e(b"2+3-4", Token::Complex(Complex::new(1.0, 0.0)));
     }
 
     #[test]
@@ -862,352 +467,102 @@ mod tests {
         e(b"2.0*3.0-4.0*3.0", Token::Complex(Complex::new(-6.0, 0.0)));
         e(b"2.0*3.0-4.0*3.0*2.0", Token::Complex(Complex::new(-18.0, 0.0)));
         e(b"2.0*3.0-4.0*3.0*2.0*2.0", Token::Complex(Complex::new(-42.0, 0.0)));
+        e(b"2.0*3.0*2.0-4.0*3.0*2.0*2.0", Token::Complex(Complex::new(-36.0, 0.0)));
     }
 
+    #[test]
+    fn test_eval_simple_float_div() {
+        e(b"2.0+3.0/4.0", Token::Complex(Complex::new(2.75, 0.0)));
+        e(b"2.0/3.0+4.0", Token::Complex(Complex::new(4.6666665, 0.0)));
+        e(b"2.0/3.0-4.0", Token::Complex(Complex::new(-3.3333333, 0.0)));
+        e(b"2.0/3.0-4.0/3.0", Token::Complex(Complex::new(-0.6666667, 0.0)));
+        e(b"2.0/3.0-4.0/3.0/2.0", Token::Complex(Complex::new(0.0, 0.0)));
+        e(b"2.0/3.0-4.0/3.0/2.0/2.0", Token::Complex(Complex::new(-0.6666667, 0.0)));
+        e(b"2.0/3.0/2.0-4.0/3.0/2.0/2.0", Token::Complex(Complex::new(-0.0, 0.0)));
+    }
+
+    #[test]
+    fn test_eval_simple_float_parens_div() {
+        e(b"(2.0+3.0)/4.0", Token::Complex(Complex::new(1.25, 0.0)));
+        e(b"(2.0+3.0+3.0)/4.0", Token::Complex(Complex::new(2.00, 0.0)));
+        e(b"(3.0+(3.0/3.0))/4.0", Token::Complex(Complex::new(1.00, 0.0)));
+
+        e(b"4.0/(2.0+3.0)", Token::Complex(Complex::new(0.80, 0.0)));
+        e(b"4.0/(2.0+3.0+3.0)", Token::Complex(Complex::new(0.50, 0.0)));
+        e(b"4.0/((2.0*3.0)+2.0)", Token::Complex(Complex::new(0.50, 0.0)));
+    }
+
+    #[test]
+    fn test_eval_vars() {
+        e(b"2x+1", Token::Complex(Complex::new(5.0, 0.0)))
+    }
 
     //#[test]
     //fn test_parse_define_polynomial_with_double_neg() {
-    //let input = b"f(x)=2.0x+3.0--4.0^2.0";
-    //let expected = vec![
-    //Token::Function("f".to_string(), Some(Rc::new(Token::Var("x".to_string())))),
-    //Token::Equal,
-    //Token::Constant(2.0),
-    //Token::Var("x".to_string()),
-    //Token::Op(Operator::Add),
-    //Token::Constant(3.0),
-    //Token::Op(Operator::Subtract),
-    //Token::Op(Operator::Subtract),
-    //Token::Constant(4.0),
-    //Token::Op(Operator::Exponent),
-    //Token::Constant(2.0),
-    //];
-    //assert_eq!(expression().parse(input), Ok(expected));
     //}
 
     //#[test]
-    //fn test_substitute_polynomial_with_double_neg() {
-    //let input = vec![
-    //Token::Function("f".to_string(), Some(Rc::new(Token::Var("x".to_string())))),
-    //Token::Equal,
-    //Token::Constant(2.0),
-    //Token::Var("x".to_string()),
-    //Token::Op(Operator::Add),
-    //Token::Constant(3.0),
-    //Token::Op(Operator::Subtract),
-    //Token::Constant(4.0),
-    //Token::Var("x".to_string()),
-    //Token::Op(Operator::Exponent),
-    //Token::Constant(2.0),
-    //];
-    //assert_eq!(
-    //substitute(input, 9.0),
-    //vec![
-    //Token::FunctionValue("f".to_string(), 9.0),
-    //Token::Equal,
-    //Token::Constant(2.0),
-    //Token::LeftParen,
-    //Token::Constant(9.0),
-    //Token::RightParen,
-    //Token::Op(Operator::Add),
-    //Token::Constant(3.0),
-    //Token::Op(Operator::Subtract),
-    //Token::Constant(4.0),
-    //Token::LeftParen,
-    //Token::Constant(9.0),
-    //Token::RightParen,
-    //Token::Op(Operator::Exponent),
-    //Token::Constant(2.0),
-    //]
-    //);
     //}
 
     //#[test]
     //fn test_simplify_double_neg_with_parens() {
-    //let input = vec![
-    //Token::Function("f".to_string(), Some(Rc::new(Token::Var("x".to_string())))),
-    //Token::Equal,
-    //Token::Constant(4.0),
-    //Token::Var("x".to_string()),
-    //Token::Op(Operator::Subtract),
-    //Token::LeftParen,
-    //Token::Op(Operator::Subtract),
-    //Token::Constant(1.0),
-    //Token::RightParen,
-    //];
-
-    //assert_eq!(
-    //simplify(input),
-    //vec![
-    //Token::Function("f".to_string(), Some(Rc::new(Token::Var("x".to_string())))),
-    //Token::Equal,
-    //Token::Constant(4.0),
-    //Token::Var("x".to_string()),
-    //Token::Op(Operator::Add),
-    //Token::LeftParen,
-    //Token::Constant(1.0),
-    //Token::RightParen,
-    //]
-    //);
     //}
 
     //#[test]
     //fn test_simplify_double_pos_with_parens() {
-    //let input = vec![
-    //Token::Function("f".to_string(), Some(Rc::new(Token::Var("x".to_string())))),
-    //Token::Equal,
-    //Token::Constant(4.0),
-    //Token::Var("x".to_string()),
-    //Token::Op(Operator::Add),
-    //Token::LeftParen,
-    //Token::Op(Operator::Add),
-    //Token::Constant(1.0),
-    //Token::RightParen,
-    //];
-
-    //assert_eq!(
-    //simplify(input),
-    //vec![
-    //Token::Function("f".to_string(), Some(Rc::new(Token::Var("x".to_string())))),
-    //Token::Equal,
-    //Token::Constant(4.0),
-    //Token::Var("x".to_string()),
-    //Token::Op(Operator::Add),
-    //Token::LeftParen,
-    //Token::Constant(1.0),
-    //Token::RightParen,
-    //]
-    //);
     //}
 
     //#[test]
     //fn test_eval_exponent_polynomial() {
-    //let input = vec![
-    //Token::Constant(9.0),
-    //Token::Op(Operator::Exponent),
-    //Token::Constant(2.0),
-    //];
-    //assert_eq!(eval_exponent(input), vec![Token::Constant(81.0),]);
     //}
 
     //#[test]
     //fn test_eval_exponent_polynomial_with_variable_sub() {
-    //let input = vec![
-    //Token::LeftParen,
-    //Token::Constant(9.0),
-    //Token::RightParen,
-    //Token::Op(Operator::Exponent),
-    //Token::Constant(2.0),
-    //];
-    //assert_eq!(
-    //eval_exponent(input),
-    //vec![Token::LeftParen, Token::Constant(81.0), Token::RightParen,]
-    //);
-
-    //let input = vec![
-    //Token::LeftParen,
-    //Token::Constant(2.0),
-    //Token::RightParen,
-    //Token::Op(Operator::Exponent),
-    //Token::Constant(3.0),
-    //];
-
-    //assert_eq!(
-    //eval_exponent(input),
-    //vec![Token::LeftParen, Token::Constant(8.0), Token::RightParen,]
-    //);
     //}
 
     //#[test]
     //fn test_eval_multiply() {
-    //let input = vec![
-    //Token::Constant(9.0),
-    //Token::Op(Operator::Multiply),
-    //Token::Constant(2.0),
-    //];
-    //assert_eq!(eval_multiply(input), vec![Token::Constant(18.0),]);
     //}
 
     //#[test]
     //fn test_eval_multiply_parens() {
-    //let input = vec![
-    //Token::LeftParen,
-    //Token::Constant(9.0),
-    //Token::RightParen,
-    //Token::Constant(2.0),
-    //];
-    //assert_eq!(eval_multiply(input), vec![Token::Constant(18.0),]);
-
-    //let input = vec![
-    //Token::Constant(9.0),
-    //Token::LeftParen,
-    //Token::Constant(2.0),
-    //Token::RightParen,
-    //];
-    //assert_eq!(eval_multiply(input), vec![Token::Constant(18.0),]);
-
-    //let input = vec![
-    //Token::LeftParen,
-    //Token::Constant(9.0),
-    //Token::RightParen,
-    //Token::LeftParen,
-    //Token::Constant(2.0),
-    //Token::RightParen,
-    //];
-    //assert_eq!(eval_multiply(input), vec![Token::Constant(18.0),]);
-
-    //// no multiply operator still runs fine
-    //let input = vec![
-    //Token::LeftParen,
-    //Token::Constant(9.0),
-    //Token::RightParen,
-    //Token::Op(Operator::Divide),
-    //Token::LeftParen,
-    //Token::Constant(2.0),
-    //Token::RightParen,
-    //];
-    //assert_eq!(
-    //eval_multiply(input),
-    //vec![
-    //Token::LeftParen,
-    //Token::Constant(9.0),
-    //Token::RightParen,
-    //Token::Op(Operator::Divide),
-    //Token::LeftParen,
-    //Token::Constant(2.0),
-    //Token::RightParen,
-    //]
-    //);
     //}
 
     //#[test]
     //fn test_eval_division() {
-    //let input = vec![
-    //Token::Constant(9.0),
-    //Token::Op(Operator::Divide),
-    //Token::Constant(2.0),
-    //];
-    //assert_eq!(eval_divide(input), vec![Token::Constant(4.5),]);
-
-    //let input = vec![
-    //Token::Constant(100.0),
-    //Token::Op(Operator::Divide),
-    //Token::Constant(2.0),
-    //Token::Op(Operator::Divide),
-    //Token::Constant(2.0),
-    //];
-    //assert_eq!(eval_divide(input), vec![Token::Constant(25.0),]);
-
-    //let input = vec![
-    //Token::LeftParen,
-    //Token::Constant(100.0),
-    //Token::RightParen,
-    //Token::Op(Operator::Divide),
-    //Token::LeftParen,
-    //Token::Constant(2.0),
-    //Token::RightParen,
-    //];
-    //assert_eq!(eval_divide(input), vec![Token::Constant(50.0)]);
     //}
 
     //#[test]
     //fn test_eval_addition() {
-    //let input = vec![
-    //Token::Constant(9.0),
-    //Token::Op(Operator::Add),
-    //Token::Constant(2.0),
-    //];
-    //assert_eq!(eval_add(input), vec![Token::Constant(11.0),]);
-
-    //let input = vec![
-    //Token::Constant(100.0),
-    //Token::Op(Operator::Add),
-    //Token::Constant(2.0),
-    //Token::Op(Operator::Add),
-    //Token::Constant(2.0),
-    //];
-    //assert_eq!(eval_add(input), vec![Token::Constant(104.0),]);
-
-    //let input = vec![
-    //Token::LeftParen,
-    //Token::Constant(8.0),
-    //Token::RightParen,
-    //Token::Op(Operator::Add),
-    //Token::Constant(1.0),
-    //Token::Op(Operator::Add),
-    //Token::LeftParen,
-    //Token::Constant(1.0),
-    //Token::RightParen,
-    //];
-    //assert_eq!(eval_add(input), vec![Token::Constant(10.0),]);
     //}
 
     //#[test]
     //fn test_eval_subtract() {
-    //let input = vec![
-    //Token::Constant(9.0),
-    //Token::Op(Operator::Subtract),
-    //Token::Constant(2.0),
-    //];
-    //assert_eq!(eval_subtract(input), vec![Token::Constant(7.0),]);
-
-    //let input = vec![
-    //Token::Constant(100.0),
-    //Token::Op(Operator::Subtract),
-    //Token::Constant(2.0),
-    //Token::Op(Operator::Subtract),
-    //Token::Constant(2.0),
-    //];
-    //assert_eq!(eval_subtract(input), vec![Token::Constant(96.0),]);
     //}
 
     //#[test]
     //fn test_eval_polynomial_double_neg() {
-    //let input = vec![
-    //Token::Function("f".to_string(), Some(Rc::new(Token::Var("x".to_string())))),
-    //Token::Equal,
-    //Token::Constant(2.0),
-    //Token::Var("x".to_string()),
-    //Token::Op(Operator::Add),
-    //Token::Constant(3.0),
-    //Token::Op(Operator::Subtract),
-    //Token::Constant(4.0),
-    //Token::Op(Operator::Exponent),
-    //Token::Constant(2.0),
-    //];
-    //assert_eq!(eval(input, 2.0), -9.0);
     //}
 
     //#[test]
     //fn test_eval_fraction_parens_polynomial() {
-    //// f(x)=(4x^2-1)/(3x+4)
-    //let input = vec![
-    //Token::Function("f".to_string(), Some(Rc::new(Token::Var("x".to_string())))),
-    //Token::Equal,
-    //Token::LeftParen,
-    //Token::Constant(4.0),
-    //Token::Var("x".to_string()),
-    //Token::Op(Operator::Exponent),
-    //Token::Constant(2.0),
-    //Token::Op(Operator::Subtract),
-    //Token::Constant(1.0),
-    //Token::RightParen,
-    //Token::Op(Operator::Divide),
-    //Token::LeftParen,
-    //Token::Constant(3.0),
-    //Token::Var("x".to_string()),
-    //Token::Op(Operator::Add),
-    //Token::Constant(4.0),
-    //Token::RightParen,
-    //];
-    //assert_eq!(eval(input, 2.0), 1.5);
     //}
+
     #[track_caller]
     fn t(string: &'static [u8], expression: Token) {
-        assert_eq!(te().parse(string), Ok(expression));
+        dbg!(std::str::from_utf8(&[120]).clone());
+        let res = total_expr().parse(string);
+        dbg!(res.clone());
+        assert_eq!(res, Ok(expression));
     }
 
     #[track_caller]
     fn e(string: &'static [u8], expression: Token) {
-        assert_eq!(te().parse(string).unwrap().eval(), Ok(expression));
+        dbg!(std::str::from_utf8(&[120]).clone());
+        let res = total_expr().parse(string);
+        dbg!(res.clone());
+        //assert_eq!(res, Ok(expression));
+
+        assert_eq!(total_expr().parse(string).unwrap().eval(), Ok(expression));
     }
 }
