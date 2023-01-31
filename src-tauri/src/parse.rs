@@ -102,7 +102,10 @@ fn function_name<'a>() -> Parser<'a, u8, String> {
 }
 
 fn trailing_atomic_expr<'a>() -> Parser<'a, u8, Token> {
-    let p = number() + one_of(b"+-*/^%") + sym(b'(') + call(expression) + sym(b')');
+    let p = number() - space() + one_of(b"+-*/^%") - space() + sym(b'(') - space()
+        + call(expression)
+        - space()
+        + sym(b')');
     p.name("trailing_atomic_expr")
         .map(
             |((((expr1, op), _left_paren), expr2), _right_paren)| match op {
@@ -160,7 +163,10 @@ fn trailing_atomic_expr<'a>() -> Parser<'a, u8, Token> {
         )
 }
 fn leading_atomic_expr<'a>() -> Parser<'a, u8, Token> {
-    let p = sym(b'(') + call(expression) + sym(b')') + one_of(b"+-*/^%") + call(expression);
+    let p = sym(b'(') - space() + call(expression) - space() + sym(b')') - space()
+        + one_of(b"+-*/^%")
+        - space()
+        + call(expression);
     p.name("leading_atomic_expr").map(
         |((((_left_paren, expr1), _right_paren), op), expr2)| match op {
             b'^' => match expr2 {
@@ -184,8 +190,14 @@ fn leading_atomic_expr<'a>() -> Parser<'a, u8, Token> {
     )
 }
 
+fn space<'a>() -> Parser<'a, u8, ()> {
+    one_of(b" \t\r\n").repeat(0..).discard()
+}
+
 fn operator<'a>() -> Parser<'a, u8, Token> {
-    let parser = number().opt() + variable().opt() + one_of(b"+-*/^%") + call(expression);
+    let parser = number().opt() - space() + variable().opt() - space() + one_of(b"+-*/^%")
+        - space()
+        + call(expression);
     parser
         .name("regular_operator")
         .map(|(((left_maybe, v), op), r)| {
@@ -289,7 +301,6 @@ fn operator<'a>() -> Parser<'a, u8, Token> {
                     ),
                     (l, r) => todo!("hi"),
                 },
-                b'^' => Token::Exponent(Box::new(l), Box::new(r)),
                 b'%' => Token::Modulo(Box::new(l), Box::new(r)),
                 _ => Token::Exponent(Box::new(l), Box::new(r)),
             }

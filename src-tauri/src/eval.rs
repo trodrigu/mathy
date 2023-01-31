@@ -150,6 +150,13 @@ mod tests {
     }
 
     #[test]
+    fn test_eval_simple_with_space() {
+        e(b"3.0 *2.0", real_num(6.0), None);
+        e(b"3.0* 2.0", real_num(6.0), None);
+        e(b"3.0* ( 2.0+2.0)", real_num(12.0), None);
+    }
+
+    #[test]
     fn test_eval_vars() {
         let mut h = HashMap::new();
         h.insert("x".to_string(), real_num(2.0));
