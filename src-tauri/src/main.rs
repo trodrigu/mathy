@@ -4,8 +4,8 @@
     windows_subsystem = "windows"
 )]
 
-mod parse;
 mod eval;
+mod parse;
 
 use parse::{total_expr, Token};
 

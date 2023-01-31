@@ -1,7 +1,7 @@
 use derivative::*;
 use std::collections::HashMap;
 
-use crate::parse::{Type, Type::*, Token};
+use crate::parse::{Token, Type, Type::*};
 
 #[derive(Derivative)]
 #[derivative(PartialEq, Clone, Debug)]
@@ -14,19 +14,16 @@ pub enum Error {
 }
 
 impl Token {
-
     pub(crate) fn expr_type(&self) -> Type {
-        //use crate::Type::*;
-
         match self {
             Token::Complex(n) => Number(n.clone()),
-            Token::Add(_,_) => Arithmetic,
-            Token::Subtract(_,_) => Arithmetic,
-            Token::Multiply(_,_) => Arithmetic,
-            Token::Divide(_,_) => Arithmetic,
-            Token::Exponent(_,_) => Arithmetic,
-            Token::Modulo(_,_) => Arithmetic,
-            _ => Unknown
+            Token::Add(_, _) => Arithmetic,
+            Token::Subtract(_, _) => Arithmetic,
+            Token::Multiply(_, _) => Arithmetic,
+            Token::Divide(_, _) => Arithmetic,
+            Token::Exponent(_, _) => Arithmetic,
+            Token::Modulo(_, _) => Arithmetic,
+            _ => Unknown,
         }
     }
 
@@ -46,19 +43,28 @@ impl Token {
         }
     }
 
-    fn eval_step_binary(&self, c1: &Self, c2: &Self, context: HashMap<String, Token>) -> Result<Self, Error> {
+    fn eval_step_binary(
+        &self,
+        c1: &Self,
+        c2: &Self,
+        context: HashMap<String, Token>,
+    ) -> Result<Self, Error> {
         let c1 = c1.eval_step(context.clone())?;
         let c2 = c2.eval_step(context.clone())?;
 
-        dbg!(self.clone());
-        dbg!(c1.clone());
-        dbg!(c2.clone());
-
         match (self, c1.expr_type(), c2.expr_type()) {
-            (Token::Add(_,_), Type::Number(inner_c1), Type::Number(inner_c2)) => Ok(Token::Complex(inner_c1 + inner_c2)),
-            (Token::Subtract(_,_), Type::Number(inner_c1), Type::Number(inner_c2)) => Ok(Token::Complex(inner_c1 - inner_c2)),
-            (Token::Multiply(_,_), Type::Number(inner_c1), Type::Number(inner_c2)) => Ok(Token::Complex(inner_c1 * inner_c2)),
-            (Token::Divide(_,_), Type::Number(inner_c1), Type::Number(inner_c2)) => Ok(Token::Complex(inner_c1 / inner_c2)),
+            (Token::Add(_, _), Type::Number(inner_c1), Type::Number(inner_c2)) => {
+                Ok(Token::Complex(inner_c1 + inner_c2))
+            }
+            (Token::Subtract(_, _), Type::Number(inner_c1), Type::Number(inner_c2)) => {
+                Ok(Token::Complex(inner_c1 - inner_c2))
+            }
+            (Token::Multiply(_, _), Type::Number(inner_c1), Type::Number(inner_c2)) => {
+                Ok(Token::Complex(inner_c1 * inner_c2))
+            }
+            (Token::Divide(_, _), Type::Number(inner_c1), Type::Number(inner_c2)) => {
+                Ok(Token::Complex(inner_c1 / inner_c2))
+            }
             _ => todo!("hi"),
         }
     }
@@ -66,22 +72,27 @@ impl Token {
     fn eval_step(&self, context: HashMap<String, Token>) -> Result<Self, Error> {
         let expr = &self;
         match expr {
-            Token::Add(c1, c2) | Token::Subtract(c1, c2) | Token::Multiply(c1, c2) | Token::Divide(c1, c2) => expr.eval_step_binary(c1, c2, context),
+            Token::Add(c1, c2)
+            | Token::Subtract(c1, c2)
+            | Token::Multiply(c1, c2)
+            | Token::Divide(c1, c2) => expr.eval_step_binary(c1, c2, context),
             Token::Complex(c) => Ok(Token::Complex(*c)),
-            Token::Var(var) => if let Some(v) = context.get(var) { Ok(v.clone()) } else { panic!("no var!") },
-            t => {
-                dbg!(t.clone());
-                todo!("hi")},
+            Token::Var(var) => {
+                if let Some(v) = context.get(var) {
+                    Ok(v.clone())
+                } else {
+                    panic!("no var!")
+                }
+            }
+            _ => todo!("hi"),
         }
     }
-
-
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::parse::{Token, total_expr, Complex};
+    use crate::parse::{total_expr, Complex, Token};
 
     #[test]
     fn test_eval_simple_int() {
@@ -186,7 +197,11 @@ mod tests {
 
     #[track_caller]
     fn e(string: &'static [u8], expression: Token, context: Option<HashMap<String, Token>>) {
-        let c = if let Some(h) = context { h } else { HashMap::new() };
+        let c = if let Some(h) = context {
+            h
+        } else {
+            HashMap::new()
+        };
 
         assert_eq!(total_expr().parse(string).unwrap().eval(c), Ok(expression));
     }
