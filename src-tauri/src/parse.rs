@@ -106,13 +106,30 @@ fn trailing_atomic_expr<'a>() -> Parser<'a, u8, Token> {
     p.name("trailing_atomic_expr")
         .map(
             |((((expr1, op), _left_paren), expr2), _right_paren)| match op {
+                b'^' => match expr2 {
+                    Token::Multiply(l, r) => {
+                        Token::Exponent(Box::new(expr1), Box::new(Token::Multiply(l, r)))
+                    }
+                    Token::Divide(l, r) => {
+                        Token::Exponent(Box::new(expr1), Box::new(Token::Divide(l, r)))
+                    }
+                    Token::Add(l, r) => {
+                        Token::Exponent(Box::new(expr1), Box::new(Token::Add(l, r)))
+                    }
+                    Token::Subtract(l, r) => {
+                        Token::Exponent(Box::new(expr1), Box::new(Token::Subtract(l, r)))
+                    }
+                    _ => todo!("nooo"),
+                },
                 b'*' => match expr2 {
                     Token::Divide(l, r) => {
-                        Token::Add(Box::new(expr1), Box::new(Token::Divide(l, r)))
+                        Token::Multiply(Box::new(expr1), Box::new(Token::Divide(l, r)))
                     }
-                    Token::Add(l, r) => Token::Divide(Box::new(expr1), Box::new(Token::Add(l, r))),
+                    Token::Add(l, r) => {
+                        Token::Multiply(Box::new(expr1), Box::new(Token::Add(l, r)))
+                    }
                     Token::Subtract(l, r) => {
-                        Token::Divide(Box::new(expr1), Box::new(Token::Subtract(l, r)))
+                        Token::Multiply(Box::new(expr1), Box::new(Token::Subtract(l, r)))
                     }
                     _ => todo!("nooo"),
                 },
@@ -146,6 +163,10 @@ fn leading_atomic_expr<'a>() -> Parser<'a, u8, Token> {
     let p = sym(b'(') + call(expression) + sym(b')') + one_of(b"+-*/^%") + call(expression);
     p.name("leading_atomic_expr").map(
         |((((_left_paren, expr1), _right_paren), op), expr2)| match op {
+            b'^' => match expr2 {
+                Token::Complex(c) => Token::Exponent(Box::new(expr1), Box::new(Token::Complex(c))),
+                _ => todo!("nooo"),
+            },
             b'/' => match expr2 {
                 Token::Complex(c) => Token::Divide(Box::new(expr1), Box::new(Token::Complex(c))),
                 _ => todo!("nooo"),
@@ -185,6 +206,42 @@ fn operator<'a>() -> Parser<'a, u8, Token> {
             match op {
                 b'+' => Token::Add(Box::new(l), Box::new(r)),
                 b'-' => Token::Subtract(Box::new(l), Box::new(r)),
+                b'^' => match (l, r) {
+                    // TODO: test left being other than complex
+                    (Token::Complex(c1), Token::Complex(c2)) => Token::Exponent(
+                        Box::new(Token::Complex(c1.clone())),
+                        Box::new(Token::Complex(c2.clone())),
+                    ),
+                    (Token::Complex(c1), Token::Add(inner_l, inner_r)) => Token::Add(
+                        Box::new(Token::Exponent(
+                            Box::new(Token::Complex(c1.clone())),
+                            inner_l,
+                        )),
+                        inner_r,
+                    ),
+                    (Token::Complex(c1), Token::Subtract(inner_l, inner_r)) => Token::Subtract(
+                        Box::new(Token::Exponent(
+                            Box::new(Token::Complex(c1.clone())),
+                            inner_l,
+                        )),
+                        inner_r,
+                    ),
+                    (Token::Complex(c1), Token::Multiply(inner_l, inner_r)) => Token::Multiply(
+                        Box::new(Token::Exponent(
+                            Box::new(Token::Complex(c1.clone())),
+                            inner_l,
+                        )),
+                        inner_r,
+                    ),
+                    (Token::Complex(c1), Token::Divide(inner_l, inner_r)) => Token::Divide(
+                        Box::new(Token::Exponent(
+                            Box::new(Token::Complex(c1.clone())),
+                            inner_l,
+                        )),
+                        inner_r,
+                    ),
+                    (l, r) => todo!("hi"),
+                },
                 b'*' => match (l, r) {
                     (Token::Complex(c1), Token::Complex(c2)) => Token::Multiply(
                         Box::new(Token::Complex(c1.clone())),

@@ -1,4 +1,5 @@
 use derivative::*;
+use num::ToPrimitive;
 use std::collections::HashMap;
 
 use crate::parse::{Token, Type, Type::*};
@@ -65,6 +66,9 @@ impl Token {
             (Token::Divide(_, _), Type::Number(inner_c1), Type::Number(inner_c2)) => {
                 Ok(Token::Complex(inner_c1 / inner_c2))
             }
+            (Token::Exponent(_, _), Type::Number(inner_c1), Type::Number(inner_c2)) => {
+                Ok(Token::Complex(inner_c1.powf(inner_c2.to_f32().unwrap())))
+            }
             _ => todo!("hi"),
         }
     }
@@ -75,7 +79,8 @@ impl Token {
             Token::Add(c1, c2)
             | Token::Subtract(c1, c2)
             | Token::Multiply(c1, c2)
-            | Token::Divide(c1, c2) => expr.eval_step_binary(c1, c2, context),
+            | Token::Divide(c1, c2)
+            | Token::Exponent(c1, c2) => expr.eval_step_binary(c1, c2, context),
             Token::Complex(c) => Ok(Token::Complex(*c)),
             Token::Var(var) => {
                 if let Some(v) = context.get(var) {
@@ -135,6 +140,13 @@ mod tests {
         e(b"4.0/(2.0+3.0)", real_num(0.80), None);
         e(b"4.0/(2.0+3.0+3.0)", real_num(0.50), None);
         e(b"4.0/((2.0*3.0)+2.0)", real_num(0.50), None);
+    }
+
+    #[test]
+    fn test_eval_simple_exponent() {
+        e(b"2.0^2.0", real_num(4.0), None);
+        e(b"(2.0*2.0)^2.0", real_num(16.0), None);
+        e(b"2.0^(2.0*3.0)", real_num(64.0), None);
     }
 
     #[test]
