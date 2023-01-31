@@ -164,13 +164,23 @@ fn leading_atomic_expr<'a>() -> Parser<'a, u8, Token> {
 }
 
 fn operator<'a>() -> Parser<'a, u8, Token> {
-    let parser = number() + variable().opt() + one_of(b"+-*/^%") + call(expression);
+    let parser = number().opt() + variable().opt() + one_of(b"+-*/^%") + call(expression);
     parser
         .name("regular_operator")
-        .map(|(((mut l, v), op), r)| {
-            if let Some(var) = v {
-                l = Token::Multiply(Box::new(l), Box::new(var));
-            }
+        .map(|(((left_maybe, v), op), r)| {
+            let l: Token = if let Some(left_number) = left_maybe {
+                if let Some(var) = v {
+                    Token::Multiply(Box::new(left_number), Box::new(var))
+                } else {
+                    left_number
+                }
+            } else {
+                if let Some(var) = v {
+                    var
+                } else {
+                    panic!("no number or var!")
+                }
+            };
 
             match op {
                 b'+' => Token::Add(Box::new(l), Box::new(r)),

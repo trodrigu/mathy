@@ -141,7 +141,9 @@ mod tests {
     fn test_eval_vars() {
         let mut h = HashMap::new();
         h.insert("x".to_string(), real_num(2.0));
-        e(b"2x+1", real_num(5.0), Some(h));
+        h.insert("y".to_string(), real_num(2.0));
+        e(b"2x+1", real_num(5.0), Some(h.clone()));
+        e(b"y+1", real_num(3.0), Some(h.clone()));
     }
 
     //#[test]
