@@ -1,7 +1,7 @@
 use derivative::*;
 use std::collections::HashMap;
 
-use crate::parse::{Type, Type::*, Token, total_expr, Complex, Integer};
+use crate::parse::{Type, Type::*, Token};
 
 #[derive(Derivative)]
 #[derivative(PartialEq, Clone, Debug)]
@@ -81,7 +81,7 @@ impl Token {
 #[cfg(test)]
 mod tests {
     use super::*;
-    //use num::rational::{Ratio, BigRational};
+    use crate::parse::{Token, total_expr, Complex};
 
     #[test]
     fn test_eval_simple_int() {
@@ -185,19 +185,7 @@ mod tests {
     //}
 
     #[track_caller]
-    fn t(string: &'static [u8], expression: Token) {
-        dbg!(std::str::from_utf8(&[120]).clone());
-        let res = total_expr().parse(string);
-        dbg!(res.clone());
-        assert_eq!(res, Ok(expression));
-    }
-
-    #[track_caller]
-    fn e(string: &'static [u8], expression: Token, mut context: Option<HashMap<String, Token>>) {
-        dbg!(std::str::from_utf8(&[120]).clone());
-        let res = total_expr().parse(string);
-        dbg!(res.clone());
-
+    fn e(string: &'static [u8], expression: Token, context: Option<HashMap<String, Token>>) {
         let c = if let Some(h) = context { h } else { HashMap::new() };
 
         assert_eq!(total_expr().parse(string).unwrap().eval(c), Ok(expression));
