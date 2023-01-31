@@ -351,62 +351,62 @@ mod tests {
     #[test]
     fn test_parse_simple_float() {
         t(b"2.0+3.0-4.0", Token::Add(
-            Box::new(Token::Complex(Complex::new(2.0, 0.0))),
+            Box::new(real_num(2.0)),
             Box::new(Token::Subtract(
-                Box::new(Token::Complex(Complex::new(3.0, 0.0))),
-                Box::new(Token::Complex(Complex::new(4.0, 0.0))),
+                Box::new(real_num(3.0)),
+                Box::new(real_num(4.0)),
             )),
         ));
     }
 
     #[test]
     fn test_parse_simple_int() {
-        e(b"2+3-4", Token::Complex(Complex::new(1.0, 0.0)), None);
+        e(b"2+3-4", real_num(1.0), None);
     }
 
     #[test]
     fn test_eval_simple_float() {
-        e(b"2.0+3.0-4.0", Token::Complex(Complex::new(1.0, 0.0)), None);
+        e(b"2.0+3.0-4.0", real_num(1.0), None);
     }
 
     #[test]
     fn test_eval_simple_float_mult() {
-        e(b"2.0+3.0*4.0", Token::Complex(Complex::new(14.0, 0.0)), None);
-        e(b"2.0*3.0+4.0", Token::Complex(Complex::new(10.0, 0.0)), None);
-        e(b"2.0*3.0-4.0", Token::Complex(Complex::new(2.0, 0.0)), None);
-        e(b"2.0*3.0-4.0*3.0", Token::Complex(Complex::new(-6.0, 0.0)), None);
-        e(b"2.0*3.0-4.0*3.0*2.0", Token::Complex(Complex::new(-18.0, 0.0)), None);
-        e(b"2.0*3.0-4.0*3.0*2.0*2.0", Token::Complex(Complex::new(-42.0, 0.0)), None);
-        e(b"2.0*3.0*2.0-4.0*3.0*2.0*2.0", Token::Complex(Complex::new(-36.0, 0.0)), None);
+        e(b"2.0+3.0*4.0", real_num(14.0), None);
+        e(b"2.0*3.0+4.0", real_num(10.0), None);
+        e(b"2.0*3.0-4.0", real_num(2.0), None);
+        e(b"2.0*3.0-4.0*3.0", real_num(-6.0), None);
+        e(b"2.0*3.0-4.0*3.0*2.0", real_num(-18.0), None);
+        e(b"2.0*3.0-4.0*3.0*2.0*2.0", real_num(-42.0), None);
+        e(b"2.0*3.0*2.0-4.0*3.0*2.0*2.0", real_num(-36.0), None);
     }
 
     #[test]
     fn test_eval_simple_float_div() {
-        e(b"2.0+3.0/4.0", Token::Complex(Complex::new(2.75, 0.0)), None);
-        e(b"2.0/3.0+4.0", Token::Complex(Complex::new(4.6666665, 0.0)), None);
-        e(b"2.0/3.0-4.0", Token::Complex(Complex::new(-3.3333333, 0.0)), None);
-        e(b"2.0/3.0-4.0/3.0", Token::Complex(Complex::new(-0.6666667, 0.0)), None);
-        e(b"2.0/3.0-4.0/3.0/2.0", Token::Complex(Complex::new(0.0, 0.0)), None);
-        e(b"2.0/3.0-4.0/3.0/2.0/2.0", Token::Complex(Complex::new(-0.6666667, 0.0)), None);
-        e(b"2.0/3.0/2.0-4.0/3.0/2.0/2.0", Token::Complex(Complex::new(-0.0, 0.0)), None);
+        e(b"2.0+3.0/4.0", real_num(2.75), None);
+        e(b"2.0/3.0+4.0", real_num(4.6666665), None);
+        e(b"2.0/3.0-4.0", real_num(-3.3333333), None);
+        e(b"2.0/3.0-4.0/3.0", real_num(-0.6666667), None);
+        e(b"2.0/3.0-4.0/3.0/2.0", real_num(0.0), None);
+        e(b"2.0/3.0-4.0/3.0/2.0/2.0", real_num(-0.6666667), None);
+        e(b"2.0/3.0/2.0-4.0/3.0/2.0/2.0", real_num(-0.0), None);
     }
 
     #[test]
     fn test_eval_simple_float_parens_div() {
-        e(b"(2.0+3.0)/4.0", Token::Complex(Complex::new(1.25, 0.0)), None);
-        e(b"(2.0+3.0+3.0)/4.0", Token::Complex(Complex::new(2.00, 0.0)), None);
-        e(b"(3.0+(3.0/3.0))/4.0", Token::Complex(Complex::new(1.00, 0.0)), None);
+        e(b"(2.0+3.0)/4.0", real_num(1.25), None);
+        e(b"(2.0+3.0+3.0)/4.0", real_num(2.00), None);
+        e(b"(3.0+(3.0/3.0))/4.0", real_num(1.00), None);
 
-        e(b"4.0/(2.0+3.0)", Token::Complex(Complex::new(0.80, 0.0)), None);
-        e(b"4.0/(2.0+3.0+3.0)", Token::Complex(Complex::new(0.50, 0.0)), None);
-        e(b"4.0/((2.0*3.0)+2.0)", Token::Complex(Complex::new(0.50, 0.0)), None);
+        e(b"4.0/(2.0+3.0)", real_num(0.80), None);
+        e(b"4.0/(2.0+3.0+3.0)", real_num(0.50), None);
+        e(b"4.0/((2.0*3.0)+2.0)", real_num(0.50), None);
     }
 
     #[test]
     fn test_eval_vars() {
         let mut h = HashMap::new();
-        h.insert("x".to_string(), Token::Complex(Complex::new(2.0, 0.0)));
-        e(b"2x+1", Token::Complex(Complex::new(5.0, 0.0)), Some(h));
+        h.insert("x".to_string(), real_num(2.0));
+        e(b"2x+1", real_num(5.0), Some(h));
     }
 
     //#[test]
@@ -477,5 +477,9 @@ mod tests {
         let c = if let Some(h) = context { h } else { HashMap::new() };
 
         assert_eq!(total_expr().parse(string).unwrap().eval(c), Ok(expression));
+    }
+
+    fn real_num(n: f32) -> Token {
+        Token::Complex(Complex::new(n, 0.0))
     }
 }
