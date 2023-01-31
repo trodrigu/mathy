@@ -103,11 +103,13 @@ impl Token {
         }
     }
 
-    fn eval(&self) -> Result<Self, Error> {
+    fn eval(&self, context: HashMap<String, Token>) -> Result<Self, Error> {
         let mut old_expr: Self = self.clone();
 
         loop {
-            let new_expr: Self = old_expr.eval_step()?;
+            let new_context = context.clone();
+
+            let new_expr: Self = old_expr.eval_step(new_context)?;
 
             if new_expr == old_expr {
                 return Ok(new_expr);
@@ -117,9 +119,9 @@ impl Token {
         }
     }
 
-    fn eval_step_binary(&self, c1: &Self, c2: &Self) -> Result<Self, Error> {
-        let c1 = c1.eval_step()?;
-        let c2 = c2.eval_step()?;
+    fn eval_step_binary(&self, c1: &Self, c2: &Self, context: HashMap<String, Token>) -> Result<Self, Error> {
+        let c1 = c1.eval_step(context.clone())?;
+        let c2 = c2.eval_step(context.clone())?;
 
         dbg!(self.clone());
         dbg!(c1.clone());
@@ -134,101 +136,20 @@ impl Token {
         }
     }
 
-    fn eval_step(&self) -> Result<Self, Error> {
+    fn eval_step(&self, context: HashMap<String, Token>) -> Result<Self, Error> {
         let expr = &self;
         match expr {
-            Token::Add(c1, c2) | Token::Subtract(c1, c2) | Token::Multiply(c1, c2) | Token::Divide(c1, c2) => expr.eval_step_binary(c1, c2),
+            Token::Add(c1, c2) | Token::Subtract(c1, c2) | Token::Multiply(c1, c2) | Token::Divide(c1, c2) => expr.eval_step_binary(c1, c2, context),
             Token::Complex(c) => Ok(Token::Complex(*c)),
+            Token::Var(var) => if let Some(v) = context.get(var) { Ok(v.clone()) } else { panic!("no var!") },
             t => {
                 dbg!(t.clone());
                 todo!("hi")},
         }
     }
 
-    //fn eval(&self, c1_box: &Self, c2_box: &Self) -> f32 {
-        //let c1 = deref_or_eval(c1_box);
-        //let c2 = deref_or_eval(c2_box);
-        //match self() {
-            //Token::Constant(n) => n,
-
-            //Token::Add(c1_box, c2_box) => {
-                //let c1 = self().deref_or_eval(c1_box);
-                //let c2 = self.deref_or_eval(c2_box);
-                //c1 + c2
-            //},
-            //Token::Subtract(c1_box, c2_box) => {
-                //let Token::Constant(c1) = *c1_box;
-                //let Token::Constant(c2) = *c2_box;
-                //c1 - c2
-            //},
-            //Token::Multiply(c1_box, c2_box) => {
-                //let Token::Constant(c1) = *c1_box;
-                //let Token::Constant(c2) = *c2_box;
-                //c1 * c2
-            //},
-            //Token::Divide(c1_box, c2_box) => {
-                //let Token::Constant(c1) = *c1_box;
-                //let Token::Constant(c2) = *c2_box;
-                //c1 / c2
-            //},
-            //Token::Exponent(c1_box, c2_box) => {
-                //let Token::Constant(c1) = *c1_box;
-                //let Token::Constant(c2) = *c2_box;
-                //c1.powf(c2)
-            //},
-            //Token::Modulo(c1_box, c2_box) => {
-                //let Token::Constant(c1) = *c1_box;
-                //let Token::Constant(c2) = *c2_box;
-                //c1 % c2
-            //},
-
-
-            ////Token::Add(c1_box, c2_box) => c1 + c2,
-            ////Token::Subtract(c1_box, c2_box) => c1 - c2,
-            ////Token::Multiply(c1_box, c2_box) => c1 * c2,
-            ////Token::Divide(c1_box, c2_box) => c1 / c2,
-            ////Token::Exponent(c1_box, c2_box) => c1.powf(*c2),
-            ////Token::Modulo(c1_box, c2_box) => c1 % c2,
-
-            ////Token::Add(eval(c1), Token::Constant(c2)) => c1 + c2,
-            ////Token::Subtract(eval(c1), Token::Constant(c2)) => c1 - c2,
-            ////Token::Multiply(eval(c1), Token::Constant(c2)) => c1 * c2,
-            ////Token::Divide(eval(c1), Token::Constant(c2)) => c1 / c2,
-            ////Token::Exponent(eval(c1), Token::Constant(c2)) => c1.powf(*c2),
-            ////Token::Modulo(eval(c1), Token::Constant(c2)) => c1 % c2,
-
-            ////Token::Add(eval(c1), eval(c2)) => c1 + c2,
-            ////Token::Subtract(eval(c1), eval(c2)) => c1 - c2,
-            ////Token::Multiply(eval(c1), eval(c2)) => c1 * c2,
-            ////Token::Divide(eval(c1), eval(c2)) => c1 / c2,
-            ////Token::Exponent(eval(c1), eval(c2)) => c1.powf(*c2),
-            ////Token::Modulo(eval(c1), eval(c2)) => c1 % c2,
-
-            //_ => panic("nope!"),
-        //}
-    //}
-
-    //fn deref_or_eval(c_box: Box<Token>) -> f32 {
-        //match *c_box {
-            //Token::Constant(c_inner) => c_inner,
-            //c_inner => eval(c_inner),
-        //}
-    //}
 
 }
-
-//#[derive(Clone, Debug, PartialEq)]
-//pub enum Operator {}
-
-//#[derive(Clone, Debug, PartialEq)]
-//pub enum IndexedParen {
-//LeftParen(usize),
-//RightParen(usize),
-//}
-
-//fn eval(token: Token) -> f32 {
-/*//collapse_right(token, value)*/
-//}
 
 fn variable<'a>() -> Parser<'a, u8, Token> {
     one_of(b"abcdefghijklmnopqrstuvwxyz")
@@ -238,15 +159,7 @@ fn variable<'a>() -> Parser<'a, u8, Token> {
         .name("variable")
         .map(Token::Var)
 }
-//fn right_paren<'a>() -> Parser<'a, u8, Token> {
-    //sym(b')').map(|_sy| Token::RightParen)
-//}
-//fn left_paren<'a>() -> Parser<'a, u8, Token> {
-    //sym(b'(').map(|_sy| Token::LeftParen)
-//}
-//fn equal<'a>() -> Parser<'a, u8, Token> {
-    //sym(b'=').map(|_sy| Token::Equal)
-//}
+
 fn number<'a>() -> Parser<'a, u8, Token> {
     let integer = one_of(b"123456789") - one_of(b"0123456789").repeat(0..) | sym(b'0');
     let frac = sym(b'.') + one_of(b"0123456789").repeat(1..);
@@ -375,11 +288,14 @@ fn leading_atomic_expr<'a>() -> Parser<'a, u8, Token> {
 }
 
 fn operator<'a>() -> Parser<'a, u8, Token> {
-    let mut parser = number() + one_of(b"+-*/^%") + call(expression);
-    parser.name("regular_operator").map(|((l, op), r)| {
+    let parser = number() + variable().opt() + one_of(b"+-*/^%") + call(expression);
+    parser.name("regular_operator").map(|(((mut l, v), op), r)| {
         //dbg!(l.clone());
         //dbg!(std::str::from_utf8(&[op]).clone());
         //dbg!(r.clone());
+        if let Some(var) = v {
+            l = Token::Multiply(Box::new(l), Box::new(var));
+        }
 
         match op {
             b'+' => Token::Add(Box::new(l), Box::new(r)),
@@ -390,10 +306,7 @@ fn operator<'a>() -> Parser<'a, u8, Token> {
                     (Token::Complex(c1), Token::Add(inner_l, inner_r)) => Token::Add(Box::new(Token::Multiply(Box::new(Token::Complex(c1.clone())), inner_l)), inner_r),
                     (Token::Complex(c1), Token::Subtract(inner_l, inner_r)) => Token::Subtract(Box::new(Token::Multiply(Box::new(Token::Complex(c1.clone())), inner_l)), inner_r),
                     (Token::Complex(c1), Token::Multiply(inner_l, inner_r)) => Token::Multiply(Box::new(Token::Multiply(Box::new(Token::Complex(c1.clone())), inner_l)), inner_r),
-                    (l,r) => {
-                        //dbg!(l.clone());
-                        todo!("hi");
-                    }
+                    (l,r) => todo!("hi"),
                 }
                 
             },
@@ -403,10 +316,7 @@ fn operator<'a>() -> Parser<'a, u8, Token> {
                     (Token::Complex(c1), Token::Add(inner_l, inner_r)) => Token::Add(Box::new(Token::Divide(Box::new(Token::Complex(c1.clone())), inner_l)), inner_r),
                     (Token::Complex(c1), Token::Subtract(inner_l, inner_r)) => Token::Subtract(Box::new(Token::Divide(Box::new(Token::Complex(c1.clone())), inner_l)), inner_r),
                     (Token::Complex(c1), Token::Divide(inner_l, inner_r)) => Token::Divide(Box::new(Token::Divide(Box::new(Token::Complex(c1.clone())), inner_l)), inner_r),
-                    (l,r) => {
-                        dbg!(l.clone());
-                        todo!("hi");
-                    }
+                    (l,r) => todo!("hi"),
                 }
                 
             },
@@ -451,50 +361,52 @@ mod tests {
 
     #[test]
     fn test_parse_simple_int() {
-        e(b"2+3-4", Token::Complex(Complex::new(1.0, 0.0)));
+        e(b"2+3-4", Token::Complex(Complex::new(1.0, 0.0)), None);
     }
 
     #[test]
     fn test_eval_simple_float() {
-        e(b"2.0+3.0-4.0", Token::Complex(Complex::new(1.0, 0.0)));
+        e(b"2.0+3.0-4.0", Token::Complex(Complex::new(1.0, 0.0)), None);
     }
 
     #[test]
     fn test_eval_simple_float_mult() {
-        e(b"2.0+3.0*4.0", Token::Complex(Complex::new(14.0, 0.0)));
-        e(b"2.0*3.0+4.0", Token::Complex(Complex::new(10.0, 0.0)));
-        e(b"2.0*3.0-4.0", Token::Complex(Complex::new(2.0, 0.0)));
-        e(b"2.0*3.0-4.0*3.0", Token::Complex(Complex::new(-6.0, 0.0)));
-        e(b"2.0*3.0-4.0*3.0*2.0", Token::Complex(Complex::new(-18.0, 0.0)));
-        e(b"2.0*3.0-4.0*3.0*2.0*2.0", Token::Complex(Complex::new(-42.0, 0.0)));
-        e(b"2.0*3.0*2.0-4.0*3.0*2.0*2.0", Token::Complex(Complex::new(-36.0, 0.0)));
+        e(b"2.0+3.0*4.0", Token::Complex(Complex::new(14.0, 0.0)), None);
+        e(b"2.0*3.0+4.0", Token::Complex(Complex::new(10.0, 0.0)), None);
+        e(b"2.0*3.0-4.0", Token::Complex(Complex::new(2.0, 0.0)), None);
+        e(b"2.0*3.0-4.0*3.0", Token::Complex(Complex::new(-6.0, 0.0)), None);
+        e(b"2.0*3.0-4.0*3.0*2.0", Token::Complex(Complex::new(-18.0, 0.0)), None);
+        e(b"2.0*3.0-4.0*3.0*2.0*2.0", Token::Complex(Complex::new(-42.0, 0.0)), None);
+        e(b"2.0*3.0*2.0-4.0*3.0*2.0*2.0", Token::Complex(Complex::new(-36.0, 0.0)), None);
     }
 
     #[test]
     fn test_eval_simple_float_div() {
-        e(b"2.0+3.0/4.0", Token::Complex(Complex::new(2.75, 0.0)));
-        e(b"2.0/3.0+4.0", Token::Complex(Complex::new(4.6666665, 0.0)));
-        e(b"2.0/3.0-4.0", Token::Complex(Complex::new(-3.3333333, 0.0)));
-        e(b"2.0/3.0-4.0/3.0", Token::Complex(Complex::new(-0.6666667, 0.0)));
-        e(b"2.0/3.0-4.0/3.0/2.0", Token::Complex(Complex::new(0.0, 0.0)));
-        e(b"2.0/3.0-4.0/3.0/2.0/2.0", Token::Complex(Complex::new(-0.6666667, 0.0)));
-        e(b"2.0/3.0/2.0-4.0/3.0/2.0/2.0", Token::Complex(Complex::new(-0.0, 0.0)));
+        e(b"2.0+3.0/4.0", Token::Complex(Complex::new(2.75, 0.0)), None);
+        e(b"2.0/3.0+4.0", Token::Complex(Complex::new(4.6666665, 0.0)), None);
+        e(b"2.0/3.0-4.0", Token::Complex(Complex::new(-3.3333333, 0.0)), None);
+        e(b"2.0/3.0-4.0/3.0", Token::Complex(Complex::new(-0.6666667, 0.0)), None);
+        e(b"2.0/3.0-4.0/3.0/2.0", Token::Complex(Complex::new(0.0, 0.0)), None);
+        e(b"2.0/3.0-4.0/3.0/2.0/2.0", Token::Complex(Complex::new(-0.6666667, 0.0)), None);
+        e(b"2.0/3.0/2.0-4.0/3.0/2.0/2.0", Token::Complex(Complex::new(-0.0, 0.0)), None);
     }
 
     #[test]
     fn test_eval_simple_float_parens_div() {
-        e(b"(2.0+3.0)/4.0", Token::Complex(Complex::new(1.25, 0.0)));
-        e(b"(2.0+3.0+3.0)/4.0", Token::Complex(Complex::new(2.00, 0.0)));
-        e(b"(3.0+(3.0/3.0))/4.0", Token::Complex(Complex::new(1.00, 0.0)));
+        e(b"(2.0+3.0)/4.0", Token::Complex(Complex::new(1.25, 0.0)), None);
+        e(b"(2.0+3.0+3.0)/4.0", Token::Complex(Complex::new(2.00, 0.0)), None);
+        e(b"(3.0+(3.0/3.0))/4.0", Token::Complex(Complex::new(1.00, 0.0)), None);
 
-        e(b"4.0/(2.0+3.0)", Token::Complex(Complex::new(0.80, 0.0)));
-        e(b"4.0/(2.0+3.0+3.0)", Token::Complex(Complex::new(0.50, 0.0)));
-        e(b"4.0/((2.0*3.0)+2.0)", Token::Complex(Complex::new(0.50, 0.0)));
+        e(b"4.0/(2.0+3.0)", Token::Complex(Complex::new(0.80, 0.0)), None);
+        e(b"4.0/(2.0+3.0+3.0)", Token::Complex(Complex::new(0.50, 0.0)), None);
+        e(b"4.0/((2.0*3.0)+2.0)", Token::Complex(Complex::new(0.50, 0.0)), None);
     }
 
     #[test]
     fn test_eval_vars() {
-        e(b"2x+1", Token::Complex(Complex::new(5.0, 0.0)))
+        let mut h = HashMap::new();
+        h.insert("x".to_string(), Token::Complex(Complex::new(2.0, 0.0)));
+        e(b"2x+1", Token::Complex(Complex::new(5.0, 0.0)), Some(h));
     }
 
     //#[test]
@@ -557,12 +469,13 @@ mod tests {
     }
 
     #[track_caller]
-    fn e(string: &'static [u8], expression: Token) {
+    fn e(string: &'static [u8], expression: Token, mut context: Option<HashMap<String, Token>>) {
         dbg!(std::str::from_utf8(&[120]).clone());
         let res = total_expr().parse(string);
         dbg!(res.clone());
-        //assert_eq!(res, Ok(expression));
 
-        assert_eq!(total_expr().parse(string).unwrap().eval(), Ok(expression));
+        let c = if let Some(h) = context { h } else { HashMap::new() };
+
+        assert_eq!(total_expr().parse(string).unwrap().eval(c), Ok(expression));
     }
 }
