@@ -79,27 +79,7 @@ fn number<'a>() -> Parser<'a, u8, Token> {
         .map(Token::Complex)
 }
 
-//
-// more of an identifier currently!
-// this is like object in json parser
-//fn function<'a>() -> Parser<'a, u8, Token> {
-//// we need to capture all tokens between the parens and use call to reinvoke expression
-//let f = function_name() - left_paren() + variable().opt() - right_paren() - sym(b'=')
-//+ call(expression);
-
-//f.map(|((fname, var), f)| match var {
-//Some(_var) => Token::Function(fname, Rc::new(f)),
-//None => Token::Function(fname, Rc::new(f)),
-//})
-//}
-
-fn function_name<'a>() -> Parser<'a, u8, String> {
-    let function_name = one_of(b"abcdefghijklmnopqrstuvwxyz").repeat(1..)
-        | one_of(b"ABCDEFGHIJKLMNOPQRSTUVWXYZ").repeat(1..);
-    function_name
-        .collect()
-        .convert(|sy| (String::from_utf8(sy.to_vec())))
-}
+/// Token Related Parsers
 
 fn trailing_atomic_expr<'a>() -> Parser<'a, u8, Token> {
     let p = number() - space() + one_of(b"+-*/^%") - space() + sym(b'(') - space()
@@ -314,4 +294,91 @@ fn expression<'a>() -> Parser<'a, u8, Token> {
 
 pub fn total_expr<'a>() -> Parser<'a, u8, Token> {
     expression() - end()
+}
+
+/// Action Related Parsers
+
+#[derive(Derivative)]
+#[derivative(PartialEq, Eq, Clone, Debug)]
+pub enum Action {
+    DefineFunc(String, Vec<Token>, Token),
+    DefineVar,
+    EvalVar,
+    Help,
+}
+
+fn function_name<'a>() -> Parser<'a, u8, String> {
+    let function_name = one_of(b"abcdefghijklmnopqrstuvwxyz").repeat(1..)
+        | one_of(b"ABCDEFGHIJKLMNOPQRSTUVWXYZ").repeat(1..);
+    function_name
+        .collect()
+        .convert(|sy| (String::from_utf8(sy.to_vec())))
+}
+
+//
+// more of an identifier currently!
+// this is like object in json parser
+/*fn function<'a>() -> Parser<'a, u8, Token> {*/
+/*// we need to capture all tokens between the parens and use call to reinvoke expression*/
+/*let f = function_name() - left_paren() + list(variable().opt(), sym(b',') * space()) - right_paren() - sym(b'=')*/
+/*+ call(expression);*/
+
+/*f.map(|((fname, var), f)| match var {*/
+/*Some(_var) => Token::Function(fname, Rc::new(f)),*/
+/*None => Token::Function(fname, Rc::new(f)),*/
+/*})*/
+/*}*/
+
+fn define_func<'a>() -> Parser<'a, u8, Action> {
+    let f = function_name() - sym(b'(') + list(variable().opt(), sym(b',') * space())
+        - sym(b')')
+        - sym(b'=')
+        + call(expression);
+    f.map(|((fname, found_vars), f)| {
+        let mut vars = Vec::new();
+
+        for v in found_vars {
+            if let Some(inner_v) = v {
+                vars.push(inner_v);
+            }
+        }
+
+        Action::DefineFunc(fname, vars, f)
+    })
+}
+
+fn total_action<'a>() -> Parser<'a, u8, Action> {
+    define_func() - end()
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::parse::{total_action, Action, Complex, Token};
+
+    #[test]
+    fn test_define_func() {
+        p(
+            b"f(x)=2x+1",
+            Action::DefineFunc(
+                "f".to_string(),
+                vec![Token::Var("x".to_string())],
+                Token::Add(
+                    Box::new(Token::Multiply(
+                        Box::new(real_num(2.0)),
+                        Box::new(Token::Var("x".to_string())),
+                    )),
+                    Box::new(real_num(1.0)),
+                ),
+            ),
+        );
+    }
+
+    #[track_caller]
+    fn p(string: &'static [u8], action: Action) {
+        assert_eq!(total_action().parse(string), Ok(action));
+    }
+
+    fn real_num(n: f32) -> Token {
+        Token::Complex(Complex::new(n, 0.0))
+    }
 }
