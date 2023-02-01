@@ -42,7 +42,8 @@ impl Display for Token {
                     )
                 }
             }
-            _ => todo!("hi"),
+            Token::Var(var_name) => write!(f, "{}", var_name),
+            _ => todo!("woops"),
         }
     }
 }
@@ -302,8 +303,8 @@ pub fn total_expr<'a>() -> Parser<'a, u8, Token> {
 #[derivative(PartialEq, Eq, Clone, Debug)]
 pub enum Action {
     DefineFunc(String, Vec<Token>, Token),
-    DefineVar,
-    EvalVar,
+    DefineVar(String, Token),
+    EvalExpr(Token),
     Help,
 }
 
@@ -315,19 +316,10 @@ fn function_name<'a>() -> Parser<'a, u8, String> {
         .convert(|sy| (String::from_utf8(sy.to_vec())))
 }
 
-//
-// more of an identifier currently!
-// this is like object in json parser
-/*fn function<'a>() -> Parser<'a, u8, Token> {*/
-/*// we need to capture all tokens between the parens and use call to reinvoke expression*/
-/*let f = function_name() - left_paren() + list(variable().opt(), sym(b',') * space()) - right_paren() - sym(b'=')*/
-/*+ call(expression);*/
-
-/*f.map(|((fname, var), f)| match var {*/
-/*Some(_var) => Token::Function(fname, Rc::new(f)),*/
-/*None => Token::Function(fname, Rc::new(f)),*/
-/*})*/
-/*}*/
+fn define_var<'a>() -> Parser<'a, u8, Action> {
+    let f = variable() - space() - sym(b'=') - space() + call(expression);
+    f.map(|(var_name, f)| Action::DefineVar(var_name.to_string(), f))
+}
 
 fn define_func<'a>() -> Parser<'a, u8, Action> {
     let f = function_name() - sym(b'(') + list(variable().opt(), sym(b',') * space())
@@ -347,8 +339,12 @@ fn define_func<'a>() -> Parser<'a, u8, Action> {
     })
 }
 
+fn eval_expr<'a>() -> Parser<'a, u8, Action> {
+    expression().map(|expr| Action::EvalExpr(expr))
+}
+
 fn total_action<'a>() -> Parser<'a, u8, Action> {
-    define_func() - end()
+    (define_var() | define_func() | eval_expr()) - end()
 }
 
 #[cfg(test)]
@@ -370,6 +366,28 @@ mod tests {
                     Box::new(real_num(1.0)),
                 ),
             ),
+        );
+    }
+
+    #[test]
+    fn test_define_var() {
+        p(
+            b"x = 2.0",
+            Action::DefineVar("x".to_string(), real_num(2.0)),
+        );
+    }
+
+    #[test]
+    fn test_eval_expr() {
+        p(
+            b"2.0*2.0+1.0",
+            Action::EvalExpr(Token::Add(
+                Box::new(Token::Multiply(
+                    Box::new(real_num(2.0)),
+                    Box::new(real_num(2.0)),
+                )),
+                Box::new(real_num(1.0)),
+            )),
         );
     }
 
