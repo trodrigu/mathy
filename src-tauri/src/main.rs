@@ -7,15 +7,25 @@
 mod eval;
 mod parse;
 
-use parse::{total_expr, Token};
+use parse::{total_action, Action};
+use std::collections::HashMap;
 
 // Learn more about Tauri commands at https://tauri.app/v1/guides/features/command
 #[tauri::command]
 fn evaluate_equation(equation: &str) -> String {
-    let result: Result<Token, pom::Error> = total_expr().parse(equation.as_bytes());
-    match result {
-        //Ok(token) => eval(token, 2.0).to_string(),
-        Ok(token) => "hi".to_string(),
+    let parsed_result: Result<Action, pom::Error> = total_action().parse(equation.as_bytes());
+    let context = HashMap::new();
+
+    match parsed_result {
+        Ok(action) => match action {
+            Action::DefineFunc(fname, vars, f) => fname,
+            Action::DefineVar(var, token) => var.to_string(),
+            Action::EvalExpr(f) => match f.eval(context) {
+                Ok(expr) => expr.to_string(),
+                Err(_err) => "nope".to_string(),
+            },
+            _ => "adf".to_string(),
+        },
         Err(_err) => {
             panic!("nope")
         }

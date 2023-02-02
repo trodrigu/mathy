@@ -152,6 +152,7 @@ fn leading_atomic_expr<'a>() -> Parser<'a, u8, Token> {
         |((((_left_paren, expr1), _right_paren), op), expr2)| match op {
             b'^' => match expr2 {
                 Token::Complex(c) => Token::Exponent(Box::new(expr1), Box::new(Token::Complex(c))),
+                // TODO: refactor todos to a proper Error
                 _ => todo!("nooo"),
             },
             b'/' => match expr2 {
@@ -305,7 +306,6 @@ pub enum Action {
     DefineFunc(String, Vec<Token>, Token),
     DefineVar(String, Token),
     EvalExpr(Token),
-    Help,
 }
 
 fn function_name<'a>() -> Parser<'a, u8, String> {
@@ -343,7 +343,7 @@ fn eval_expr<'a>() -> Parser<'a, u8, Action> {
     expression().map(|expr| Action::EvalExpr(expr))
 }
 
-fn total_action<'a>() -> Parser<'a, u8, Action> {
+pub fn total_action<'a>() -> Parser<'a, u8, Action> {
     (define_var() | define_func() | eval_expr()) - end()
 }
 

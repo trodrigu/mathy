@@ -28,7 +28,7 @@ impl Token {
         }
     }
 
-    fn eval(&self, context: HashMap<String, Token>) -> Result<Self, Error> {
+    pub fn eval(&self, context: HashMap<String, Token>) -> Result<Self, Error> {
         let mut old_expr: Self = self.clone();
 
         loop {
