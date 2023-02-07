@@ -83,6 +83,7 @@ impl Token {
             | Token::Exponent(c1, c2) => expr.eval_step_binary(c1, c2, context),
             Token::Complex(c) => Ok(Token::Complex(*c)),
             Token::Var(var) => {
+                dbg!(context.clone());
                 if let Some(v) = context.get(var) {
                     Ok(v.clone())
                 } else {

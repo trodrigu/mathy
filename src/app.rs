@@ -3,6 +3,8 @@ use serde_wasm_bindgen::to_value;
 use wasm_bindgen::prelude::*;
 use wasm_bindgen_futures::spawn_local;
 use yew::prelude::*;
+use std::collections::HashMap;
+use mathy_core::parse::Token;
 
 #[wasm_bindgen]
 extern "C" {
@@ -18,13 +20,30 @@ struct EquationArgs<'a> {
     equation: &'a str,
 }
 
+#[derive(Clone, PartialEq, Debug)]
+struct State {
+    current_equation: Option<String>,
+    tokens: HashMap<String, Token>,
+    last_evaluated: Option<String>
+}
+
+impl State {
+    pub fn default() -> State {
+        Self {
+            current_equation: Some("".to_string()),
+            tokens: HashMap::new(),
+            last_evaluated: Some("".to_string())
+        }
+    }
+}
+
 #[function_component(App)]
 pub fn app() -> Html {
-    let equation_input_ref = use_ref(|| NodeRef::default());
+    let equation_input_ref = use_node_ref();
 
-    let equation = use_state(|| String::new());
+    let equation = use_state(|| State::default().current_equation.unwrap());
 
-    let equation_msg = use_state(|| String::new());
+    let equation_msg = use_state(|| State::default().last_evaluated.unwrap());
     {
         let equation_msg = equation_msg.clone();
         let equation = equation.clone();
@@ -71,7 +90,7 @@ pub fn app() -> Html {
     html! {
         <main class="container">
             <div class="row">
-                <input id="equation-input" ref={&*equation_input_ref} placeholder="Enter an equation..." />
+                <input id="equation-input" ref={equation_input_ref} placeholder="Enter an equation..." />
                 <button type="button" onclick={evaluate_equation}>{"Evaluate"}</button>
             </div>
 

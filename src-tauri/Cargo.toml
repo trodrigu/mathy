@@ -20,6 +20,8 @@ tauri = {version = "1.2", features = ["api-all"] }
 pom = "3.2.0"
 derivative = "2.2.0"
 num = "0.4.0"
+mathy_core = { path = "../mathy_core" }
+
 
 [features]
 # by default Tauri runs in production mode

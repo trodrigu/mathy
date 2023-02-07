@@ -12,6 +12,7 @@ wasm-bindgen = { version = "0.2.82", features = ["serde-serialize"] }
 wasm-bindgen-futures = "0.4.32"
 web-sys = "0.3.59"
 yew = { git = "https://github.com/yewstack/yew/", features = ["csr"] }
+mathy_core = { path = "mathy_core" }
 
 [workspace]
-members = ["src-tauri"]
+members = ["src-tauri", "mathy_core"]

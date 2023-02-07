@@ -4,10 +4,7 @@
     windows_subsystem = "windows"
 )]
 
-mod eval;
-mod parse;
-
-use parse::{total_action, Action};
+use mathy_core::parse::{total_action, Action};
 use std::collections::HashMap;
 
 // Learn more about Tauri commands at https://tauri.app/v1/guides/features/command
