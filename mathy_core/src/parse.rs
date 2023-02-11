@@ -22,8 +22,8 @@ pub enum Token {
     //LeftParen,
     //Function(String,
     //#[derivative(PartialEq = "ignore", Debug = "ignore")] Rc<Function>),
-    //Function(String, Rc<Token>),
-    //FunctionValue(String, f32),
+    Function(String, Vec<Self>, Box<Self>),
+    FunctionValue(String, Vec<Self>),
 }
 
 impl Display for Token {
@@ -234,7 +234,29 @@ fn operator<'a>() -> Parser<'a, u8, Token> {
                         )),
                         inner_r,
                     ),
-                    (l, r) => todo!("hi"),
+
+                    // do it for the vars
+                    (Token::Var(c1), Token::Add(inner_l, inner_r)) => Token::Add(
+                        Box::new(Token::Exponent(Box::new(Token::Var(c1.clone())), inner_l)),
+                        inner_r,
+                    ),
+                    (Token::Var(c1), Token::Subtract(inner_l, inner_r)) => Token::Subtract(
+                        Box::new(Token::Exponent(Box::new(Token::Var(c1.clone())), inner_l)),
+                        inner_r,
+                    ),
+                    (Token::Var(c1), Token::Multiply(inner_l, inner_r)) => Token::Multiply(
+                        Box::new(Token::Exponent(Box::new(Token::Var(c1.clone())), inner_l)),
+                        inner_r,
+                    ),
+                    (Token::Var(c1), Token::Divide(inner_l, inner_r)) => Token::Divide(
+                        Box::new(Token::Exponent(Box::new(Token::Var(c1.clone())), inner_l)),
+                        inner_r,
+                    ),
+                    (l, r) => {
+                        dbg!(l.clone());
+                        dbg!(r.clone());
+                        todo!("whyyyy")
+                    }
                 },
                 b'*' => match (l, r) {
                     (Token::Complex(c1), Token::Complex(c2)) => Token::Multiply(
@@ -262,7 +284,29 @@ fn operator<'a>() -> Parser<'a, u8, Token> {
                         )),
                         inner_r,
                     ),
-                    (l, r) => todo!("hi"),
+
+                    // do it for the vars
+                    (Token::Var(c1), Token::Add(inner_l, inner_r)) => Token::Add(
+                        Box::new(Token::Multiply(Box::new(Token::Var(c1.clone())), inner_l)),
+                        inner_r,
+                    ),
+                    (Token::Var(c1), Token::Subtract(inner_l, inner_r)) => Token::Subtract(
+                        Box::new(Token::Multiply(Box::new(Token::Var(c1.clone())), inner_l)),
+                        inner_r,
+                    ),
+                    (Token::Var(c1), Token::Multiply(inner_l, inner_r)) => Token::Multiply(
+                        Box::new(Token::Multiply(Box::new(Token::Var(c1.clone())), inner_l)),
+                        inner_r,
+                    ),
+                    (Token::Var(c1), Token::Divide(inner_l, inner_r)) => Token::Divide(
+                        Box::new(Token::Multiply(Box::new(Token::Var(c1.clone())), inner_l)),
+                        inner_r,
+                    ),
+                    (l, r) => {
+                        dbg!(l.clone());
+                        dbg!(r.clone());
+                        todo!("hermm")
+                    }
                 },
                 b'/' => match (l, r) {
                     (Token::Complex(c1), Token::Complex(c2)) => Token::Divide(
@@ -281,6 +325,25 @@ fn operator<'a>() -> Parser<'a, u8, Token> {
                         Box::new(Token::Divide(Box::new(Token::Complex(c1.clone())), inner_l)),
                         inner_r,
                     ),
+
+                    // do it for the vars
+                    (Token::Var(c1), Token::Add(inner_l, inner_r)) => Token::Add(
+                        Box::new(Token::Divide(Box::new(Token::Var(c1.clone())), inner_l)),
+                        inner_r,
+                    ),
+                    (Token::Var(c1), Token::Subtract(inner_l, inner_r)) => Token::Subtract(
+                        Box::new(Token::Divide(Box::new(Token::Var(c1.clone())), inner_l)),
+                        inner_r,
+                    ),
+                    // divide is after multiply
+                    (Token::Var(c1), Token::Multiply(inner_l, inner_r)) => Token::Divide(
+                        Box::new(Token::Multiply(Box::new(Token::Var(c1.clone())), inner_l)),
+                        inner_r,
+                    ),
+                    (Token::Var(c1), Token::Divide(inner_l, inner_r)) => Token::Divide(
+                        Box::new(Token::Divide(Box::new(Token::Var(c1.clone())), inner_l)),
+                        inner_r,
+                    ),
                     (l, r) => todo!("hi"),
                 },
                 b'%' => Token::Modulo(Box::new(l), Box::new(r)),
@@ -289,9 +352,29 @@ fn operator<'a>() -> Parser<'a, u8, Token> {
         })
 }
 
+fn function_value<'a>() -> Parser<'a, u8, Token> {
+    // f(9)
+    let f = function_name() - sym(b'(') + list(number().opt(), sym(b',') * space()) - sym(b')');
+    f.name("function_value").map(|(f_name, found_args)| {
+        let mut args = Vec::new();
+
+        for v in found_args {
+            if let Some(inner_v) = v {
+                args.push(inner_v);
+            }
+        }
+        Token::FunctionValue(f_name, args)
+    })
+}
+
 // this is like value in json parser
 fn expression<'a>() -> Parser<'a, u8, Token> {
-    trailing_atomic_expr() | leading_atomic_expr() | operator() | variable() | number()
+    trailing_atomic_expr()
+        | leading_atomic_expr()
+        | operator()
+        | function_value()
+        | variable()
+        | number()
 }
 
 pub fn total_expr<'a>() -> Parser<'a, u8, Token> {
@@ -364,6 +447,48 @@ mod tests {
                         Box::new(Token::Var("x".to_string())),
                     )),
                     Box::new(real_num(1.0)),
+                ),
+            ),
+        );
+
+        p(
+            b"f(x)=x^2+1",
+            Action::DefineFunc(
+                "f".to_string(),
+                vec![Token::Var("x".to_string())],
+                Token::Add(
+                    Box::new(Token::Exponent(
+                        Box::new(Token::Var("x".to_string())),
+                        Box::new(real_num(2.0)),
+                    )),
+                    Box::new(real_num(1.0)),
+                ),
+            ),
+        );
+
+        p(
+            b"f(x)=x*3+3",
+            Action::DefineFunc(
+                "f".to_string(),
+                vec![Token::Var("x".to_string())],
+                Token::Add(
+                    Box::new(Token::Multiply(
+                        Box::new(Token::Var("x".to_string())),
+                        Box::new(real_num(3.0)),
+                    )),
+                    Box::new(real_num(3.0)),
+                ),
+            ),
+        );
+
+        p(
+            b"f(x)=2/x",
+            Action::DefineFunc(
+                "f".to_string(),
+                vec![Token::Var("x".to_string())],
+                Token::Divide(
+                    Box::new(real_num(3.0)),
+                    Box::new(Token::Var("x".to_string())),
                 ),
             ),
         );

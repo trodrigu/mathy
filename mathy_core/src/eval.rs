@@ -90,6 +90,24 @@ impl Token {
                     panic!("no var!")
                 }
             }
+            Token::FunctionValue(function_identifier, args) => {
+                if let Some(f) = context.get(function_identifier) {
+                    match f {
+                        Token::Function(function_identifier, function_args, function) => {
+                            let mut updated_context = context.clone();
+                            for (i, arg) in args.iter().enumerate() {
+                                let arg_identifier = &function_args[i];
+                                updated_context.insert(arg_identifier.to_string(), arg.clone());
+                            }
+                            // TODO: error handling when evaluation tokens
+                            Ok(function.eval(updated_context).unwrap())
+                        }
+                        _ => panic!("no func!"),
+                    }
+                } else {
+                    panic!("no var!")
+                }
+            }
             _ => todo!("hi"),
         }
     }
@@ -148,6 +166,7 @@ mod tests {
         e(b"2.0^2.0", real_num(4.0), None);
         e(b"(2.0*2.0)^2.0", real_num(16.0), None);
         e(b"2.0^(2.0*3.0)", real_num(64.0), None);
+        e(b"2.0^2.0 + 1", real_num(5.0), None);
     }
 
     #[test]
@@ -164,6 +183,26 @@ mod tests {
         h.insert("y".to_string(), real_num(2.0));
         e(b"2x+1", real_num(5.0), Some(h.clone()));
         e(b"y+1", real_num(3.0), Some(h.clone()));
+    }
+
+    #[test]
+    fn test_eval_function_value() {
+        let mut h = HashMap::new();
+        h.insert(
+            "f".to_string(),
+            Token::Function(
+                "f".to_string(),
+                vec![Token::Var("x".to_string())],
+                Box::new(Token::Add(
+                    Box::new(Token::Multiply(
+                        Box::new(real_num(2.0)),
+                        Box::new(Token::Var("x".to_string())),
+                    )),
+                    Box::new(real_num(1.0)),
+                )),
+            ),
+        );
+        e(b"f(2)", real_num(5.0), Some(h.clone()));
     }
 
     //#[test]

@@ -59,7 +59,10 @@ impl Reducible for State {
 
                 match action {
                     DefineFunc(func_name, args, expr) => {
-                        current_tokens.insert(func_name, expr);
+                        current_tokens.insert(
+                            func_name.clone(),
+                            Token::Function(func_name.clone(), args, Box::new(expr)),
+                        );
                         Self {
                             current_equation_or_action: None,
                             tokens: current_tokens,
