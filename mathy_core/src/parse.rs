@@ -206,6 +206,10 @@ fn operator<'a>() -> Parser<'a, u8, Token> {
                         Box::new(Token::Complex(c1.clone())),
                         Box::new(Token::Complex(c2.clone())),
                     ),
+                    (Token::Complex(c1), Token::Var(c2)) => Token::Exponent(
+                        Box::new(Token::Complex(c1.clone())),
+                        Box::new(Token::Var(c2.clone())),
+                    ),
                     (Token::Complex(c1), Token::Add(inner_l, inner_r)) => Token::Add(
                         Box::new(Token::Exponent(
                             Box::new(Token::Complex(c1.clone())),
@@ -263,6 +267,10 @@ fn operator<'a>() -> Parser<'a, u8, Token> {
                         Box::new(Token::Complex(c1.clone())),
                         Box::new(Token::Complex(c2.clone())),
                     ),
+                    (Token::Complex(c1), Token::Var(c2)) => Token::Multiply(
+                        Box::new(Token::Complex(c1.clone())),
+                        Box::new(Token::Var(c2.clone())),
+                    ),
                     (Token::Complex(c1), Token::Add(inner_l, inner_r)) => Token::Add(
                         Box::new(Token::Multiply(
                             Box::new(Token::Complex(c1.clone())),
@@ -313,6 +321,10 @@ fn operator<'a>() -> Parser<'a, u8, Token> {
                         Box::new(Token::Complex(c1.clone())),
                         Box::new(Token::Complex(c2.clone())),
                     ),
+                    (Token::Complex(c1), Token::Var(c2)) => Token::Divide(
+                        Box::new(Token::Complex(c1.clone())),
+                        Box::new(Token::Var(c2.clone())),
+                    ),
                     (Token::Complex(c1), Token::Add(inner_l, inner_r)) => Token::Add(
                         Box::new(Token::Divide(Box::new(Token::Complex(c1.clone())), inner_l)),
                         inner_r,
@@ -344,7 +356,12 @@ fn operator<'a>() -> Parser<'a, u8, Token> {
                         Box::new(Token::Divide(Box::new(Token::Var(c1.clone())), inner_l)),
                         inner_r,
                     ),
-                    (l, r) => todo!("hi"),
+
+                    (l, r) => {
+                        dbg!(l.clone());
+                        dbg!(r.clone());
+                        todo!("hi")
+                    },
                 },
                 b'%' => Token::Modulo(Box::new(l), Box::new(r)),
                 _ => Token::Exponent(Box::new(l), Box::new(r)),
@@ -487,7 +504,7 @@ mod tests {
                 "f".to_string(),
                 vec![Token::Var("x".to_string())],
                 Token::Divide(
-                    Box::new(real_num(3.0)),
+                    Box::new(real_num(2.0)),
                     Box::new(Token::Var("x".to_string())),
                 ),
             ),
