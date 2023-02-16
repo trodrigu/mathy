@@ -12,6 +12,7 @@ pub enum Error {
         numerator: Token,
         denominator: Token,
     },
+    UnknownError,
 }
 
 impl Token {
@@ -34,7 +35,7 @@ impl Token {
         loop {
             let new_context = context.clone();
 
-            let new_expr: Self = old_expr.eval_step(new_context)?;
+            let new_expr: Self = old_expr.eval_step(new_context, vec![])?;
 
             if new_expr == old_expr {
                 return Ok(new_expr);
@@ -49,9 +50,11 @@ impl Token {
         c1: &Self,
         c2: &Self,
         context: HashMap<String, Token>,
+        mut parents: Vec<Self>,
     ) -> Result<Self, Error> {
-        let c1 = c1.eval_step(context.clone())?;
-        let c2 = c2.eval_step(context.clone())?;
+        parents.push(self.clone());
+        let c1 = c1.eval_step(context.clone(), parents.clone())?;
+        let c2 = c2.eval_step(context.clone(), parents.clone())?;
 
         match (self, c1.expr_type(), c2.expr_type()) {
             (Token::Add(_, _), Type::Number(inner_c1), Type::Number(inner_c2)) => {
@@ -64,7 +67,20 @@ impl Token {
                 Ok(Token::Complex(inner_c1 * inner_c2))
             }
             (Token::Divide(_, _), Type::Number(inner_c1), Type::Number(inner_c2)) => {
-                Ok(Token::Complex(inner_c1 / inner_c2))
+                // parents is a mega hack to correctly evaluate nested divisions by
+                // multiplying the bottoms until the top which then the final division is applied
+                //
+                // pop self
+                parents.pop();
+                if let Some(p) = parents.pop() {
+                    if matches!(p, Token::Divide(_, _)) {
+                        Ok(Token::Complex(inner_c1 * inner_c2))
+                    } else {
+                        Ok(Token::Complex(inner_c1 / inner_c2))
+                    }
+                } else {
+                    Ok(Token::Complex(inner_c1 / inner_c2))
+                }
             }
             (Token::Exponent(_, _), Type::Number(inner_c1), Type::Number(inner_c2)) => {
                 Ok(Token::Complex(inner_c1.powf(inner_c2.to_f32().unwrap())))
@@ -73,17 +89,20 @@ impl Token {
         }
     }
 
-    fn eval_step(&self, context: HashMap<String, Token>) -> Result<Self, Error> {
+    fn eval_step(
+        &self,
+        context: HashMap<String, Token>,
+        parents: Vec<Self>,
+    ) -> Result<Self, Error> {
         let expr = &self;
         match expr {
             Token::Add(c1, c2)
             | Token::Subtract(c1, c2)
             | Token::Multiply(c1, c2)
             | Token::Divide(c1, c2)
-            | Token::Exponent(c1, c2) => expr.eval_step_binary(c1, c2, context),
+            | Token::Exponent(c1, c2) => expr.eval_step_binary(c1, c2, context, parents),
             Token::Complex(c) => Ok(Token::Complex(*c)),
             Token::Var(var) => {
-                dbg!(context.clone());
                 if let Some(v) = context.get(var) {
                     Ok(v.clone())
                 } else {
@@ -146,8 +165,13 @@ mod tests {
         e(b"2.0/3.0-4.0", real_num(-3.3333333), None);
         e(b"2.0/3.0-4.0/3.0", real_num(-0.6666667), None);
         e(b"2.0/3.0-4.0/3.0/2.0", real_num(0.0), None);
-        e(b"2.0/3.0-4.0/3.0/2.0/2.0", real_num(-0.6666667), None);
-        e(b"2.0/3.0/2.0-4.0/3.0/2.0/2.0", real_num(-0.0), None);
+        e(b"1.0/2.0-3.0/4.0/5.0/6.0", real_num(0.475), None);
+        e(
+            b"1.0/2.0/3.0-4.0/5.0/6.0/7.0",
+            real_num(0.14761904761),
+            None,
+        );
+        e(b"1.0/2.0/3.0/4.0/5.0/6.0/7.0", real_num(0.0001984127), None);
     }
 
     #[test]
@@ -264,7 +288,9 @@ mod tests {
             HashMap::new()
         };
 
-        assert_eq!(total_expr().parse(string).unwrap().eval(c), Ok(expression));
+        let p = total_expr().parse(string).unwrap();
+
+        assert_eq!(p.eval(c), Ok(expression));
     }
 
     fn real_num(n: f32) -> Token {

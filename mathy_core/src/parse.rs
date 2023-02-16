@@ -257,8 +257,6 @@ fn operator<'a>() -> Parser<'a, u8, Token> {
                         inner_r,
                     ),
                     (l, r) => {
-                        dbg!(l.clone());
-                        dbg!(r.clone());
                         todo!("whyyyy")
                     }
                 },
@@ -311,8 +309,6 @@ fn operator<'a>() -> Parser<'a, u8, Token> {
                         inner_r,
                     ),
                     (l, r) => {
-                        dbg!(l.clone());
-                        dbg!(r.clone());
                         todo!("hermm")
                     }
                 },
@@ -334,8 +330,8 @@ fn operator<'a>() -> Parser<'a, u8, Token> {
                         inner_r,
                     ),
                     (Token::Complex(c1), Token::Divide(inner_l, inner_r)) => Token::Divide(
-                        Box::new(Token::Divide(Box::new(Token::Complex(c1.clone())), inner_l)),
-                        inner_r,
+                        Box::new(Token::Complex(c1.clone())),
+                        Box::new(Token::Divide(inner_l, inner_r)),
                     ),
 
                     // do it for the vars
@@ -358,10 +354,8 @@ fn operator<'a>() -> Parser<'a, u8, Token> {
                     ),
 
                     (l, r) => {
-                        dbg!(l.clone());
-                        dbg!(r.clone());
                         todo!("hi")
-                    },
+                    }
                 },
                 b'%' => Token::Modulo(Box::new(l), Box::new(r)),
                 _ => Token::Exponent(Box::new(l), Box::new(r)),
