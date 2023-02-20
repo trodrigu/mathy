@@ -1,3 +1,8 @@
+extern crate dimensioned as dim;
+use dim::dimensions::Length;
+use dim::si::{self, f32consts, Meter, FT, M, S, SI};
+use dim::Dimensioned;
+
 use derivative::*;
 use num::{Signed, Zero};
 use pom::parser::Parser;
@@ -15,8 +20,9 @@ pub enum Token {
     Divide(Box<Self>, Box<Self>),
     Exponent(Box<Self>, Box<Self>),
     Modulo(Box<Self>, Box<Self>),
-    //Constant(f32),
-    Complex(Complex),
+    //Constant(f32, unit),
+    Complex(Complex, Option<Box<Self>>),
+    Unit(Meter<f32>),
     //Equal,
     //RightParen,
     //LeftParen,
@@ -26,10 +32,21 @@ pub enum Token {
     FunctionValue(String, Vec<Self>),
 }
 
+//#[derive(Derivative)]
+//#[derivative(PartialEq, Eq, Clone, Debug)]
+//pub enum Unit {
+//Feet(Foot),
+//Meters(Meter),
+//}
+
+//pub type Unit = SI<V, U>;
+
+//pub type Unit =
+
 impl Display for Token {
     fn fmt(&self, f: &mut Formatter<'_>) -> Res {
         match self {
-            Token::Complex(z) => {
+            Token::Complex(z, None) => {
                 if z.im.is_zero() {
                     write!(f, "{}", z.re.clone())
                 } else {
@@ -49,6 +66,7 @@ impl Display for Token {
 }
 
 pub type Complex = num::complex::Complex<f32>;
+//pub type
 
 #[derive(Derivative)]
 #[derivative(PartialEq, Eq, Clone, Debug)]
@@ -59,12 +77,43 @@ pub enum Type {
 }
 
 fn variable<'a>() -> Parser<'a, u8, Token> {
-    one_of(b"abcdefghijklmnopqrstuvwxyz")
+    // TODO: remove ft or meters?
+    one_of(b"abcdeghijklnopqrsuvwxyz")
         .repeat(1..)
         .collect()
         .convert(|sy| (String::from_utf8(sy.to_vec())))
         .name("variable")
         .map(Token::Var)
+}
+
+fn number_with_unit<'a>() -> Parser<'a, u8, Token> {
+    let p = number() + (seq(b"ft") | seq(b"m")).opt();
+    p.name("number_with_unit").map(|(num, unit)| {
+        dbg!(num.clone());
+        match num {
+            Token::Complex(num, _none) => {
+                match unit {
+                    Some(b"ft") => {
+                        //dbg!(String::from_utf8(unit.clone().to_vec()));
+                        let ft_in_m = num.re * f32consts::FT;
+                        Token::Complex(
+                            Complex::new(ft_in_m.value_unsafe().clone(), 0.0),
+                            Some(Box::new(Token::Unit(ft_in_m))),
+                        )
+                    }
+                    Some(b"m") => {
+                        let in_m = num.re * f32consts::M;
+                        Token::Complex(
+                            Complex::new(in_m.value_unsafe().clone(), 0.0),
+                            Some(Box::new(Token::Unit(in_m))),
+                        )
+                    }
+                    _ => Token::Complex(num, None),
+                }
+            }
+            _ => panic!("something went wrong!"),
+        }
+    })
 }
 
 fn number<'a>() -> Parser<'a, u8, Token> {
@@ -75,9 +124,12 @@ fn number<'a>() -> Parser<'a, u8, Token> {
     number
         .name("number")
         .collect()
-        .convert(|v| String::from_utf8(v.to_vec()))
+        .convert(|v| {
+            dbg!(String::from_utf8(v.clone().to_vec()));
+            String::from_utf8(v.to_vec())
+        })
         .convert(|s| s.parse::<Complex>())
-        .map(Token::Complex)
+        .map(|t| Token::Complex(t, None))
 }
 
 /// Token Related Parsers
@@ -151,20 +203,28 @@ fn leading_atomic_expr<'a>() -> Parser<'a, u8, Token> {
     p.name("leading_atomic_expr").map(
         |((((_left_paren, expr1), _right_paren), op), expr2)| match op {
             b'^' => match expr2 {
-                Token::Complex(c) => Token::Exponent(Box::new(expr1), Box::new(Token::Complex(c))),
+                Token::Complex(c, None) => {
+                    Token::Exponent(Box::new(expr1), Box::new(Token::Complex(c, None)))
+                }
                 // TODO: refactor todos to a proper Error
                 _ => todo!("nooo"),
             },
             b'/' => match expr2 {
-                Token::Complex(c) => Token::Divide(Box::new(expr1), Box::new(Token::Complex(c))),
+                Token::Complex(c, None) => {
+                    Token::Divide(Box::new(expr1), Box::new(Token::Complex(c, None)))
+                }
                 _ => todo!("nooo"),
             },
             b'*' => match expr2 {
-                Token::Complex(c) => Token::Multiply(Box::new(expr1), Box::new(Token::Complex(c))),
+                Token::Complex(c, None) => {
+                    Token::Multiply(Box::new(expr1), Box::new(Token::Complex(c, None)))
+                }
                 _ => todo!("nooo"),
             },
             b'+' => match expr2 {
-                Token::Complex(c) => Token::Add(Box::new(expr1), Box::new(Token::Complex(c))),
+                Token::Complex(c, None) => {
+                    Token::Add(Box::new(expr1), Box::new(Token::Complex(c, None)))
+                }
                 _ => todo!("nooo"),
             },
             _ => todo!("noooo"),
@@ -177,7 +237,8 @@ fn space<'a>() -> Parser<'a, u8, ()> {
 }
 
 fn operator<'a>() -> Parser<'a, u8, Token> {
-    let parser = number().opt() - space() + variable().opt() - space() + one_of(b"+-*/^%")
+    let parser = number_with_unit().opt() - space() + variable().opt() - space()
+        + one_of(b"+-*/^%")
         - space()
         + call(expression);
     parser
@@ -202,38 +263,42 @@ fn operator<'a>() -> Parser<'a, u8, Token> {
                 b'-' => Token::Subtract(Box::new(l), Box::new(r)),
                 b'^' => match (l, r) {
                     // TODO: test left being other than complex
-                    (Token::Complex(c1), Token::Complex(c2)) => Token::Exponent(
-                        Box::new(Token::Complex(c1.clone())),
-                        Box::new(Token::Complex(c2.clone())),
+                    (Token::Complex(c1, None), Token::Complex(c2, None)) => Token::Exponent(
+                        Box::new(Token::Complex(c1, None.clone())),
+                        Box::new(Token::Complex(c2, None.clone())),
                     ),
-                    (Token::Complex(c1), Token::Var(c2)) => Token::Exponent(
-                        Box::new(Token::Complex(c1.clone())),
+                    (Token::Complex(c1, None), Token::Var(c2)) => Token::Exponent(
+                        Box::new(Token::Complex(c1, None.clone())),
                         Box::new(Token::Var(c2.clone())),
                     ),
-                    (Token::Complex(c1), Token::Add(inner_l, inner_r)) => Token::Add(
+                    (Token::Complex(c1, None), Token::Add(inner_l, inner_r)) => Token::Add(
                         Box::new(Token::Exponent(
-                            Box::new(Token::Complex(c1.clone())),
+                            Box::new(Token::Complex(c1, None.clone())),
                             inner_l,
                         )),
                         inner_r,
                     ),
-                    (Token::Complex(c1), Token::Subtract(inner_l, inner_r)) => Token::Subtract(
+                    (Token::Complex(c1, None), Token::Subtract(inner_l, inner_r)) => {
+                        Token::Subtract(
+                            Box::new(Token::Exponent(
+                                Box::new(Token::Complex(c1, None.clone())),
+                                inner_l,
+                            )),
+                            inner_r,
+                        )
+                    }
+                    (Token::Complex(c1, None), Token::Multiply(inner_l, inner_r)) => {
+                        Token::Multiply(
+                            Box::new(Token::Exponent(
+                                Box::new(Token::Complex(c1, None.clone())),
+                                inner_l,
+                            )),
+                            inner_r,
+                        )
+                    }
+                    (Token::Complex(c1, None), Token::Divide(inner_l, inner_r)) => Token::Divide(
                         Box::new(Token::Exponent(
-                            Box::new(Token::Complex(c1.clone())),
-                            inner_l,
-                        )),
-                        inner_r,
-                    ),
-                    (Token::Complex(c1), Token::Multiply(inner_l, inner_r)) => Token::Multiply(
-                        Box::new(Token::Exponent(
-                            Box::new(Token::Complex(c1.clone())),
-                            inner_l,
-                        )),
-                        inner_r,
-                    ),
-                    (Token::Complex(c1), Token::Divide(inner_l, inner_r)) => Token::Divide(
-                        Box::new(Token::Exponent(
-                            Box::new(Token::Complex(c1.clone())),
+                            Box::new(Token::Complex(c1, None.clone())),
                             inner_l,
                         )),
                         inner_r,
@@ -261,35 +326,39 @@ fn operator<'a>() -> Parser<'a, u8, Token> {
                     }
                 },
                 b'*' => match (l, r) {
-                    (Token::Complex(c1), Token::Complex(c2)) => Token::Multiply(
-                        Box::new(Token::Complex(c1.clone())),
-                        Box::new(Token::Complex(c2.clone())),
+                    (Token::Complex(c1, None), Token::Complex(c2, None)) => Token::Multiply(
+                        Box::new(Token::Complex(c1.clone(), None)),
+                        Box::new(Token::Complex(c2.clone(), None)),
                     ),
-                    (Token::Complex(c1), Token::Var(c2)) => Token::Multiply(
-                        Box::new(Token::Complex(c1.clone())),
+                    (Token::Complex(c1, None), Token::Var(c2)) => Token::Multiply(
+                        Box::new(Token::Complex(c1.clone(), None)),
                         Box::new(Token::Var(c2.clone())),
                     ),
-                    (Token::Complex(c1), Token::Add(inner_l, inner_r)) => Token::Add(
+                    (Token::Complex(c1, None), Token::Add(inner_l, inner_r)) => Token::Add(
                         Box::new(Token::Multiply(
-                            Box::new(Token::Complex(c1.clone())),
+                            Box::new(Token::Complex(c1.clone(), None)),
                             inner_l,
                         )),
                         inner_r,
                     ),
-                    (Token::Complex(c1), Token::Subtract(inner_l, inner_r)) => Token::Subtract(
-                        Box::new(Token::Multiply(
-                            Box::new(Token::Complex(c1.clone())),
-                            inner_l,
-                        )),
-                        inner_r,
-                    ),
-                    (Token::Complex(c1), Token::Multiply(inner_l, inner_r)) => Token::Multiply(
-                        Box::new(Token::Multiply(
-                            Box::new(Token::Complex(c1.clone())),
-                            inner_l,
-                        )),
-                        inner_r,
-                    ),
+                    (Token::Complex(c1, None), Token::Subtract(inner_l, inner_r)) => {
+                        Token::Subtract(
+                            Box::new(Token::Multiply(
+                                Box::new(Token::Complex(c1.clone(), None)),
+                                inner_l,
+                            )),
+                            inner_r,
+                        )
+                    }
+                    (Token::Complex(c1, None), Token::Multiply(inner_l, inner_r)) => {
+                        Token::Multiply(
+                            Box::new(Token::Multiply(
+                                Box::new(Token::Complex(c1.clone(), None)),
+                                inner_l,
+                            )),
+                            inner_r,
+                        )
+                    }
 
                     // do it for the vars
                     (Token::Var(c1), Token::Add(inner_l, inner_r)) => Token::Add(
@@ -313,24 +382,32 @@ fn operator<'a>() -> Parser<'a, u8, Token> {
                     }
                 },
                 b'/' => match (l, r) {
-                    (Token::Complex(c1), Token::Complex(c2)) => Token::Divide(
-                        Box::new(Token::Complex(c1.clone())),
-                        Box::new(Token::Complex(c2.clone())),
+                    (Token::Complex(c1, None), Token::Complex(c2, None)) => Token::Divide(
+                        Box::new(Token::Complex(c1.clone(), None)),
+                        Box::new(Token::Complex(c2.clone(), None)),
                     ),
-                    (Token::Complex(c1), Token::Var(c2)) => Token::Divide(
-                        Box::new(Token::Complex(c1.clone())),
+                    (Token::Complex(c1, None), Token::Var(c2)) => Token::Divide(
+                        Box::new(Token::Complex(c1.clone(), None)),
                         Box::new(Token::Var(c2.clone())),
                     ),
-                    (Token::Complex(c1), Token::Add(inner_l, inner_r)) => Token::Add(
-                        Box::new(Token::Divide(Box::new(Token::Complex(c1.clone())), inner_l)),
+                    (Token::Complex(c1, None), Token::Add(inner_l, inner_r)) => Token::Add(
+                        Box::new(Token::Divide(
+                            Box::new(Token::Complex(c1.clone(), None)),
+                            inner_l,
+                        )),
                         inner_r,
                     ),
-                    (Token::Complex(c1), Token::Subtract(inner_l, inner_r)) => Token::Subtract(
-                        Box::new(Token::Divide(Box::new(Token::Complex(c1.clone())), inner_l)),
-                        inner_r,
-                    ),
-                    (Token::Complex(c1), Token::Divide(inner_l, inner_r)) => Token::Divide(
-                        Box::new(Token::Complex(c1.clone())),
+                    (Token::Complex(c1, None), Token::Subtract(inner_l, inner_r)) => {
+                        Token::Subtract(
+                            Box::new(Token::Divide(
+                                Box::new(Token::Complex(c1.clone(), None)),
+                                inner_l,
+                            )),
+                            inner_r,
+                        )
+                    }
+                    (Token::Complex(c1, None), Token::Divide(inner_l, inner_r)) => Token::Divide(
+                        Box::new(Token::Complex(c1.clone(), None)),
                         Box::new(Token::Divide(inner_l, inner_r)),
                     ),
 
@@ -384,8 +461,8 @@ fn expression<'a>() -> Parser<'a, u8, Token> {
         | leading_atomic_expr()
         | operator()
         | function_value()
+        | number_with_unit()
         | variable()
-        | number()
 }
 
 pub fn total_expr<'a>() -> Parser<'a, u8, Token> {
@@ -533,6 +610,6 @@ mod tests {
     }
 
     fn real_num(n: f32) -> Token {
-        Token::Complex(Complex::new(n, 0.0))
+        Token::Complex(Complex::new(n, 0.0), None)
     }
 }

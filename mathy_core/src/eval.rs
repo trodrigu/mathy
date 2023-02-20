@@ -1,6 +1,8 @@
 use derivative::*;
 use num::ToPrimitive;
 use std::collections::HashMap;
+extern crate dimensioned as dim;
+use dim::si::f32consts;
 
 use crate::parse::{Token, Type, Type::*};
 
@@ -18,7 +20,7 @@ pub enum Error {
 impl Token {
     pub(crate) fn expr_type(&self) -> Type {
         match self {
-            Token::Complex(n) => Number(n.clone()),
+            Token::Complex(n, None) => Number(n.clone()),
             Token::Add(_, _) => Arithmetic,
             Token::Subtract(_, _) => Arithmetic,
             Token::Multiply(_, _) => Arithmetic,
@@ -58,13 +60,13 @@ impl Token {
 
         match (self, c1.expr_type(), c2.expr_type()) {
             (Token::Add(_, _), Type::Number(inner_c1), Type::Number(inner_c2)) => {
-                Ok(Token::Complex(inner_c1 + inner_c2))
+                Ok(Token::Complex(inner_c1 + inner_c2, None))
             }
             (Token::Subtract(_, _), Type::Number(inner_c1), Type::Number(inner_c2)) => {
-                Ok(Token::Complex(inner_c1 - inner_c2))
+                Ok(Token::Complex(inner_c1 - inner_c2, None))
             }
             (Token::Multiply(_, _), Type::Number(inner_c1), Type::Number(inner_c2)) => {
-                Ok(Token::Complex(inner_c1 * inner_c2))
+                Ok(Token::Complex(inner_c1 * inner_c2, None))
             }
             (Token::Divide(_, _), Type::Number(inner_c1), Type::Number(inner_c2)) => {
                 // parents is a mega hack to correctly evaluate nested divisions by
@@ -74,17 +76,17 @@ impl Token {
                 parents.pop();
                 if let Some(p) = parents.pop() {
                     if matches!(p, Token::Divide(_, _)) {
-                        Ok(Token::Complex(inner_c1 * inner_c2))
+                        Ok(Token::Complex(inner_c1 * inner_c2, None))
                     } else {
-                        Ok(Token::Complex(inner_c1 / inner_c2))
+                        Ok(Token::Complex(inner_c1 / inner_c2, None))
                     }
                 } else {
-                    Ok(Token::Complex(inner_c1 / inner_c2))
+                    Ok(Token::Complex(inner_c1 / inner_c2, None))
                 }
             }
-            (Token::Exponent(_, _), Type::Number(inner_c1), Type::Number(inner_c2)) => {
-                Ok(Token::Complex(inner_c1.powf(inner_c2.to_f32().unwrap())))
-            }
+            (Token::Exponent(_, _), Type::Number(inner_c1), Type::Number(inner_c2)) => Ok(
+                Token::Complex(inner_c1.powf(inner_c2.to_f32().unwrap()), None),
+            ),
             _ => todo!("hi"),
         }
     }
@@ -95,13 +97,14 @@ impl Token {
         parents: Vec<Self>,
     ) -> Result<Self, Error> {
         let expr = &self;
+        dbg!(self.clone());
         match expr {
             Token::Add(c1, c2)
             | Token::Subtract(c1, c2)
             | Token::Multiply(c1, c2)
             | Token::Divide(c1, c2)
             | Token::Exponent(c1, c2) => expr.eval_step_binary(c1, c2, context, parents),
-            Token::Complex(c) => Ok(Token::Complex(*c)),
+            Token::Complex(c, _) => Ok(Token::Complex(*c, None)),
             Token::Var(var) => {
                 if let Some(v) = context.get(var) {
                     Ok(v.clone())
@@ -138,75 +141,90 @@ mod tests {
     use crate::parse::{total_expr, Complex, Token};
 
     #[test]
+    fn test_eval_simple_unit_conversion() {
+        e(
+            b"2ft+3m",
+            real_num(
+                11.8425197 * 0.3048,
+                Some(Token::Unit(11.8425197 * f32consts::FT)),
+            ),
+            None,
+        );
+    }
+    #[test]
     fn test_eval_simple_int() {
-        e(b"2+3-4", real_num(1.0), None);
+        e(b"2+3-4", real_num(1.0, None), None);
     }
 
     #[test]
     fn test_eval_simple_float() {
-        e(b"2.0+3.0-4.0", real_num(1.0), None);
+        e(b"2.0+3.0-4.0", real_num(1.0, None), None);
     }
 
     #[test]
     fn test_eval_simple_float_mult() {
-        e(b"2.0+3.0*4.0", real_num(14.0), None);
-        e(b"2.0*3.0+4.0", real_num(10.0), None);
-        e(b"2.0*3.0-4.0", real_num(2.0), None);
-        e(b"2.0*3.0-4.0*3.0", real_num(-6.0), None);
-        e(b"2.0*3.0-4.0*3.0*2.0", real_num(-18.0), None);
-        e(b"2.0*3.0-4.0*3.0*2.0*2.0", real_num(-42.0), None);
-        e(b"2.0*3.0*2.0-4.0*3.0*2.0*2.0", real_num(-36.0), None);
+        e(b"2.0+3.0*4.0", real_num(14.0, None), None);
+        e(b"2.0*3.0+4.0", real_num(10.0, None), None);
+        e(b"2.0*3.0-4.0", real_num(2.0, None), None);
+        e(b"2.0*3.0-4.0*3.0", real_num(-6.0, None), None);
+        e(b"2.0*3.0-4.0*3.0*2.0", real_num(-18.0, None), None);
+        e(b"2.0*3.0-4.0*3.0*2.0*2.0", real_num(-42.0, None), None);
+        e(b"2.0*3.0*2.0-4.0*3.0*2.0*2.0", real_num(-36.0, None), None);
     }
 
     #[test]
     fn test_eval_simple_float_div() {
-        e(b"2.0+3.0/4.0", real_num(2.75), None);
-        e(b"2.0/3.0+4.0", real_num(4.6666665), None);
-        e(b"2.0/3.0-4.0", real_num(-3.3333333), None);
-        e(b"2.0/3.0-4.0/3.0", real_num(-0.6666667), None);
-        e(b"2.0/3.0-4.0/3.0/2.0", real_num(0.0), None);
-        e(b"1.0/2.0-3.0/4.0/5.0/6.0", real_num(0.475), None);
+        e(b"2.0+3.0/4.0", real_num(2.75, None), None);
+        e(b"2.0/3.0+4.0", real_num(4.6666665, None), None);
+        e(b"2.0/3.0-4.0", real_num(-3.3333333, None), None);
+        e(b"2.0/3.0-4.0/3.0", real_num(-0.6666667, None), None);
+        e(b"2.0/3.0-4.0/3.0/2.0", real_num(0.0, None), None);
+        e(b"1.0/2.0-3.0/4.0/5.0/6.0", real_num(0.475, None), None);
         e(
             b"1.0/2.0/3.0-4.0/5.0/6.0/7.0",
-            real_num(0.14761904761),
+            real_num(0.14761904761, None),
             None,
         );
-        e(b"1.0/2.0/3.0/4.0/5.0/6.0/7.0", real_num(0.0001984127), None);
+        e(
+            b"1.0/2.0/3.0/4.0/5.0/6.0/7.0",
+            real_num(0.0001984127, None),
+            None,
+        );
     }
 
     #[test]
     fn test_eval_simple_float_parens_div() {
-        e(b"(2.0+3.0)/4.0", real_num(1.25), None);
-        e(b"(2.0+3.0+3.0)/4.0", real_num(2.00), None);
-        e(b"(3.0+(3.0/3.0))/4.0", real_num(1.00), None);
+        e(b"(2.0+3.0)/4.0", real_num(1.25, None), None);
+        e(b"(2.0+3.0+3.0)/4.0", real_num(2.00, None), None);
+        e(b"(3.0+(3.0/3.0))/4.0", real_num(1.00, None), None);
 
-        e(b"4.0/(2.0+3.0)", real_num(0.80), None);
-        e(b"4.0/(2.0+3.0+3.0)", real_num(0.50), None);
-        e(b"4.0/((2.0*3.0)+2.0)", real_num(0.50), None);
+        e(b"4.0/(2.0+3.0)", real_num(0.80, None), None);
+        e(b"4.0/(2.0+3.0+3.0)", real_num(0.50, None), None);
+        e(b"4.0/((2.0*3.0)+2.0)", real_num(0.50, None), None);
     }
 
     #[test]
     fn test_eval_simple_exponent() {
-        e(b"2.0^2.0", real_num(4.0), None);
-        e(b"(2.0*2.0)^2.0", real_num(16.0), None);
-        e(b"2.0^(2.0*3.0)", real_num(64.0), None);
-        e(b"2.0^2.0 + 1", real_num(5.0), None);
+        e(b"2.0^2.0", real_num(4.0, None), None);
+        e(b"(2.0*2.0)^2.0", real_num(16.0, None), None);
+        e(b"2.0^(2.0*3.0)", real_num(64.0, None), None);
+        e(b"2.0^2.0 + 1", real_num(5.0, None), None);
     }
 
     #[test]
     fn test_eval_simple_with_space() {
-        e(b"3.0 *2.0", real_num(6.0), None);
-        e(b"3.0* 2.0", real_num(6.0), None);
-        e(b"3.0* ( 2.0+2.0)", real_num(12.0), None);
+        e(b"3.0 *2.0", real_num(6.0, None), None);
+        e(b"3.0* 2.0", real_num(6.0, None), None);
+        e(b"3.0* ( 2.0+2.0)", real_num(12.0, None), None);
     }
 
     #[test]
     fn test_eval_vars() {
         let mut h = HashMap::new();
-        h.insert("x".to_string(), real_num(2.0));
-        h.insert("y".to_string(), real_num(2.0));
-        e(b"2x+1", real_num(5.0), Some(h.clone()));
-        e(b"y+1", real_num(3.0), Some(h.clone()));
+        h.insert("x".to_string(), real_num(2.0, None));
+        h.insert("y".to_string(), real_num(2.0, None));
+        e(b"2x+1", real_num(5.0, None), Some(h.clone()));
+        e(b"y+1", real_num(3.0, None), Some(h.clone()));
     }
 
     #[test]
@@ -219,14 +237,14 @@ mod tests {
                 vec![Token::Var("x".to_string())],
                 Box::new(Token::Add(
                     Box::new(Token::Multiply(
-                        Box::new(real_num(2.0)),
+                        Box::new(real_num(2.0, None)),
                         Box::new(Token::Var("x".to_string())),
                     )),
-                    Box::new(real_num(1.0)),
+                    Box::new(real_num(1.0, None)),
                 )),
             ),
         );
-        e(b"f(2)", real_num(5.0), Some(h.clone()));
+        e(b"f(2)", real_num(5.0, None), Some(h.clone()));
     }
 
     //#[test]
@@ -293,7 +311,11 @@ mod tests {
         assert_eq!(p.eval(c), Ok(expression));
     }
 
-    fn real_num(n: f32) -> Token {
-        Token::Complex(Complex::new(n, 0.0))
+    fn real_num(n: f32, maybe_unit: Option<Token>) -> Token {
+        if let Some(unit) = maybe_unit {
+            Token::Complex(Complex::new(n, 0.0), Some(Box::new(unit)))
+        } else {
+            Token::Complex(Complex::new(n, 0.0), None)
+        }
     }
 }
