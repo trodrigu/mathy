@@ -2,7 +2,7 @@ use derivative::*;
 use num::ToPrimitive;
 use std::collections::HashMap;
 extern crate dimensioned as dim;
-use dim::si::f32consts;
+use dim::{si::f32consts, Dimensioned};
 
 use crate::parse::{Token, Type, Type::*};
 
@@ -21,6 +21,10 @@ impl Token {
     pub(crate) fn expr_type(&self) -> Type {
         match self {
             Token::Complex(n, None) => Number(n.clone()),
+            Token::Complex(_n, Some(unit)) => match **unit {
+                Token::Unit(unit) => NumberWithUnit(unit),
+                _ => panic!("not a unit"),
+            },
             Token::Add(_, _) => Arithmetic,
             Token::Subtract(_, _) => Arithmetic,
             Token::Multiply(_, _) => Arithmetic,
@@ -59,8 +63,16 @@ impl Token {
         let c2 = c2.eval_step(context.clone(), parents.clone())?;
 
         match (self, c1.expr_type(), c2.expr_type()) {
-            (Token::Add(_, _), Type::Number(inner_c1), Type::Number(inner_c2)) => {
+            (Token::Add(a, a2), Type::Number(inner_c1), Type::Number(inner_c2)) => {
                 Ok(Token::Complex(inner_c1 + inner_c2, None))
+            }
+            (Token::Add(a, a2), Type::NumberWithUnit(inner_c1), Type::NumberWithUnit(inner_c2)) => {
+                let dim_result = inner_c1 + inner_c2;
+
+                Ok(Token::Complex(
+                    f32::into(inner_c1.value_unsafe() + inner_c2.value_unsafe()),
+                    Some(Box::new(Token::Unit(dim_result))),
+                ))
             }
             (Token::Subtract(_, _), Type::Number(inner_c1), Type::Number(inner_c2)) => {
                 Ok(Token::Complex(inner_c1 - inner_c2, None))
@@ -87,7 +99,9 @@ impl Token {
             (Token::Exponent(_, _), Type::Number(inner_c1), Type::Number(inner_c2)) => Ok(
                 Token::Complex(inner_c1.powf(inner_c2.to_f32().unwrap()), None),
             ),
-            _ => todo!("hi"),
+            _ => {
+                todo!("hi")
+            }
         }
     }
 
@@ -97,14 +111,13 @@ impl Token {
         parents: Vec<Self>,
     ) -> Result<Self, Error> {
         let expr = &self;
-        dbg!(self.clone());
         match expr {
             Token::Add(c1, c2)
             | Token::Subtract(c1, c2)
             | Token::Multiply(c1, c2)
             | Token::Divide(c1, c2)
             | Token::Exponent(c1, c2) => expr.eval_step_binary(c1, c2, context, parents),
-            Token::Complex(c, _) => Ok(Token::Complex(*c, None)),
+            Token::Complex(c, u) => Ok(Token::Complex(*c, u.clone())),
             Token::Var(var) => {
                 if let Some(v) = context.get(var) {
                     Ok(v.clone())

@@ -72,6 +72,7 @@ pub type Complex = num::complex::Complex<f32>;
 #[derivative(PartialEq, Eq, Clone, Debug)]
 pub enum Type {
     Number(Complex),
+    NumberWithUnit(Meter<f32>),
     Arithmetic,
     Unknown,
 }
@@ -88,31 +89,25 @@ fn variable<'a>() -> Parser<'a, u8, Token> {
 
 fn number_with_unit<'a>() -> Parser<'a, u8, Token> {
     let p = number() + (seq(b"ft") | seq(b"m")).opt();
-    p.name("number_with_unit").map(|(num, unit)| {
-        dbg!(num.clone());
-        match num {
-            Token::Complex(num, _none) => {
-                match unit {
-                    Some(b"ft") => {
-                        //dbg!(String::from_utf8(unit.clone().to_vec()));
-                        let ft_in_m = num.re * f32consts::FT;
-                        Token::Complex(
-                            Complex::new(ft_in_m.value_unsafe().clone(), 0.0),
-                            Some(Box::new(Token::Unit(ft_in_m))),
-                        )
-                    }
-                    Some(b"m") => {
-                        let in_m = num.re * f32consts::M;
-                        Token::Complex(
-                            Complex::new(in_m.value_unsafe().clone(), 0.0),
-                            Some(Box::new(Token::Unit(in_m))),
-                        )
-                    }
-                    _ => Token::Complex(num, None),
-                }
+    p.name("number_with_unit").map(|(num, unit)| match num {
+        Token::Complex(num, _none) => match unit {
+            Some(b"ft") => {
+                let ft_in_m = num.re * f32consts::FT;
+                Token::Complex(
+                    Complex::new(ft_in_m.value_unsafe().clone(), 0.0),
+                    Some(Box::new(Token::Unit(ft_in_m))),
+                )
             }
-            _ => panic!("something went wrong!"),
-        }
+            Some(b"m") => {
+                let in_m = num.re * f32consts::M;
+                Token::Complex(
+                    Complex::new(in_m.value_unsafe().clone(), 0.0),
+                    Some(Box::new(Token::Unit(in_m))),
+                )
+            }
+            _ => Token::Complex(num, None),
+        },
+        _ => panic!("something went wrong!"),
     })
 }
 
@@ -124,10 +119,7 @@ fn number<'a>() -> Parser<'a, u8, Token> {
     number
         .name("number")
         .collect()
-        .convert(|v| {
-            dbg!(String::from_utf8(v.clone().to_vec()));
-            String::from_utf8(v.to_vec())
-        })
+        .convert(|v| String::from_utf8(v.to_vec()))
         .convert(|s| s.parse::<Complex>())
         .map(|t| Token::Complex(t, None))
 }
