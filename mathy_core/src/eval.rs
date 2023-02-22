@@ -3,8 +3,10 @@ use num::ToPrimitive;
 use std::collections::HashMap;
 extern crate dimensioned as dim;
 use dim::{si::f32consts, Dimensioned};
+use nalgebra::dvector;
+use nalgebra::DVector;
 
-use crate::parse::{Token, Type, Type::*};
+use crate::parse::{Complex, Token, Type, Type::*};
 
 #[derive(Derivative)]
 #[derivative(PartialEq, Clone, Debug)]
@@ -25,6 +27,7 @@ impl Token {
                 Token::Unit(unit) => NumberWithUnit(unit),
                 _ => panic!("not a unit"),
             },
+            Token::Vector(vec_of_complexes) => VectorComplex(vec_of_complexes.clone()),
             Token::Add(_, _) => Arithmetic,
             Token::Subtract(_, _) => Arithmetic,
             Token::Multiply(_, _) => Arithmetic,
@@ -99,8 +102,16 @@ impl Token {
             (Token::Exponent(_, _), Type::Number(inner_c1), Type::Number(inner_c2)) => Ok(
                 Token::Complex(inner_c1.powf(inner_c2.to_f32().unwrap()), None),
             ),
-            _ => {
-                todo!("hi")
+            (Token::Add(_, _), Type::VectorComplex(inner_c1), Type::VectorComplex(inner_c2)) => {
+                Ok(Token::Vector(inner_c1 + inner_c2))
+            }
+            (some_operation, some_left, some_right) => {
+                dbg!((
+                    some_operation.clone(),
+                    some_left.clone(),
+                    some_right.clone()
+                ));
+                panic!("other than reg operation")
             }
         }
     }
@@ -143,6 +154,7 @@ impl Token {
                     panic!("no var!")
                 }
             }
+            Token::Vector(vec) => Ok(Token::Vector(vec.clone())),
             _ => todo!("hi"),
         }
     }
@@ -150,6 +162,8 @@ impl Token {
 
 #[cfg(test)]
 mod tests {
+    use nalgebra::dvector;
+
     use super::*;
     use crate::parse::{total_expr, Complex, Token};
 
@@ -164,6 +178,20 @@ mod tests {
             None,
         );
     }
+
+    #[test]
+    fn test_eval_vector_addition() {
+        e(
+            b"[1,2,3]+[1,2,3]",
+            Token::Vector(dvector![
+                Complex::new(2.0, 0.0),
+                Complex::new(4.0, 0.0),
+                Complex::new(6.0, 0.0)
+            ]),
+            None,
+        )
+    }
+
     #[test]
     fn test_eval_simple_int() {
         e(b"2+3-4", real_num(1.0, None), None);

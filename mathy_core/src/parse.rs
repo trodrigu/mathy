@@ -2,8 +2,10 @@ extern crate dimensioned as dim;
 use dim::dimensions::Length;
 use dim::si::{self, f32consts, Meter, FT, M, S, SI};
 use dim::Dimensioned;
+use nalgebra::dvector;
 
 use derivative::*;
+use nalgebra::DVector;
 use num::{Signed, Zero};
 use pom::parser::Parser;
 use pom::parser::*;
@@ -30,7 +32,10 @@ pub enum Token {
     //#[derivative(PartialEq = "ignore", Debug = "ignore")] Rc<Function>),
     Function(String, Vec<Self>, Box<Self>),
     FunctionValue(String, Vec<Self>),
+    Vector(Vector),
 }
+
+pub type Vector = DVector<Complex>;
 
 //#[derive(Derivative)]
 //#[derivative(PartialEq, Eq, Clone, Debug)]
@@ -74,7 +79,28 @@ pub enum Type {
     Number(Complex),
     NumberWithUnit(Meter<f32>),
     Arithmetic,
+    VectorComplex(DVector<Complex>),
     Unknown,
+}
+
+fn vector<'a>() -> Parser<'a, u8, Token> {
+    let elems = list(number(), sym(b',') * space());
+    let p = sym(b'[') * space() + elems - sym(b']');
+    p.name("vector").map(|(_left_bracket, vec)| {
+        dbg!(vec.clone());
+        let vec_of_complexes = vec
+            .iter()
+            .map(|token_complex| {
+                if let Token::Complex(c, _) = token_complex {
+                    c.clone()
+                } else {
+                    panic!("not a token complex")
+                }
+            })
+            .collect::<Vec<Complex>>();
+
+        Token::Vector(DVector::from(vec_of_complexes))
+    })
 }
 
 fn variable<'a>() -> Parser<'a, u8, Token> {
@@ -226,6 +252,16 @@ fn leading_atomic_expr<'a>() -> Parser<'a, u8, Token> {
 
 fn space<'a>() -> Parser<'a, u8, ()> {
     one_of(b" \t\r\n").repeat(0..).discard()
+}
+
+fn operator_vector<'a>() -> Parser<'a, u8, Token> {
+    let parser = vector() - space() + one_of(b"+-*/^%") - space() + call(expression);
+    parser
+        .name("operator_vector")
+        .map(|((left_vector, op), right_vector)| match op {
+            b'+' => Token::Add(Box::new(left_vector), Box::new(right_vector)),
+            _ => Token::Add(Box::new(left_vector), Box::new(right_vector)),
+        })
 }
 
 fn operator<'a>() -> Parser<'a, u8, Token> {
@@ -455,6 +491,8 @@ fn expression<'a>() -> Parser<'a, u8, Token> {
         | function_value()
         | number_with_unit()
         | variable()
+        | operator_vector()
+        | vector()
 }
 
 pub fn total_expr<'a>() -> Parser<'a, u8, Token> {
