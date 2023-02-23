@@ -4,8 +4,9 @@ use dim::si::{self, f32consts, Meter, FT, M, S, SI};
 use dim::Dimensioned;
 use nalgebra::dvector;
 
+use core::panic;
 use derivative::*;
-use nalgebra::DVector;
+use nalgebra::{DMatrix, DVector};
 use num::{Signed, Zero};
 use pom::parser::Parser;
 use pom::parser::*;
@@ -33,9 +34,11 @@ pub enum Token {
     Function(String, Vec<Self>, Box<Self>),
     FunctionValue(String, Vec<Self>),
     Vector(Vector),
+    Matrix(Matrix),
 }
 
 pub type Vector = DVector<Complex>;
+pub type Matrix = DMatrix<Complex>;
 
 //#[derive(Derivative)]
 //#[derivative(PartialEq, Eq, Clone, Debug)]
@@ -80,9 +83,53 @@ pub enum Type {
     NumberWithUnit(Meter<f32>),
     Arithmetic,
     VectorComplex(DVector<Complex>),
+    MatrixComplex(DMatrix<Complex>),
     Unknown,
 }
 
+fn matrix<'a>() -> Parser<'a, u8, Token> {
+    let elems = list(number(), sym(b',') * space());
+    let row = sym(b'[') * space() + elems - sym(b']');
+    let matrix = sym(b'[') * space() + list(row, sym(b',') * space()) - sym(b']');
+    matrix.name("matrix").map(|(_left_bracket, mat)| {
+        dbg!(mat.clone());
+        let matrix_of_complexes = mat
+            .iter()
+            .map(|(_, row)| {
+                row.iter()
+                    .map(|t| {
+                        if let Token::Complex(c, _) = t {
+                            c.clone()
+                        } else {
+                            panic!("not a token complex")
+                        }
+                    })
+                    .collect::<Vec<Complex>>()
+            })
+            .collect::<Vec<Vec<Complex>>>();
+
+        let row_count = matrix_of_complexes.len();
+        let col_count = if let Some(first) = matrix_of_complexes.first() {
+            first.len()
+        } else {
+            panic!("matrix has no columns");
+        };
+        dbg!(row_count.clone());
+        dbg!(col_count.clone());
+
+        let flat_matrix_of_complexes = matrix_of_complexes
+            .into_iter()
+            .flatten()
+            .collect::<Vec<Complex>>();
+
+        dbg!(flat_matrix_of_complexes.clone());
+        Token::Matrix(DMatrix::from_vec(
+            row_count,
+            col_count,
+            flat_matrix_of_complexes,
+        ))
+    })
+}
 fn vector<'a>() -> Parser<'a, u8, Token> {
     let elems = list(number(), sym(b',') * space());
     let p = sym(b'[') * space() + elems - sym(b']');
@@ -264,6 +311,15 @@ fn operator_vector<'a>() -> Parser<'a, u8, Token> {
         })
 }
 
+fn operator_matrix<'a>() -> Parser<'a, u8, Token> {
+    let parser = matrix() - space() + one_of(b"+-*/^%") - space() + call(expression);
+    parser
+        .name("operator_matrix")
+        .map(|((left_matrix, op), right_matrix)| match op {
+            b'+' => Token::Add(Box::new(left_matrix), Box::new(right_matrix)),
+            _ => Token::Add(Box::new(left_matrix), Box::new(right_matrix)),
+        })
+}
 fn operator<'a>() -> Parser<'a, u8, Token> {
     let parser = number_with_unit().opt() - space() + variable().opt() - space()
         + one_of(b"+-*/^%")
@@ -492,6 +548,8 @@ fn expression<'a>() -> Parser<'a, u8, Token> {
         | number_with_unit()
         | variable()
         | operator_vector()
+        | operator_matrix()
+        | matrix()
         | vector()
 }
 

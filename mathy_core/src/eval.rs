@@ -4,7 +4,7 @@ use std::collections::HashMap;
 extern crate dimensioned as dim;
 use dim::{si::f32consts, Dimensioned};
 use nalgebra::dvector;
-use nalgebra::DVector;
+use nalgebra::{DMatrix, DVector};
 
 use crate::parse::{Complex, Token, Type, Type::*};
 
@@ -28,6 +28,7 @@ impl Token {
                 _ => panic!("not a unit"),
             },
             Token::Vector(vec_of_complexes) => VectorComplex(vec_of_complexes.clone()),
+            Token::Matrix(matrix_of_complexes) => MatrixComplex(matrix_of_complexes.clone()),
             Token::Add(_, _) => Arithmetic,
             Token::Subtract(_, _) => Arithmetic,
             Token::Multiply(_, _) => Arithmetic,
@@ -105,6 +106,13 @@ impl Token {
             (Token::Add(_, _), Type::VectorComplex(inner_c1), Type::VectorComplex(inner_c2)) => {
                 Ok(Token::Vector(inner_c1 + inner_c2))
             }
+            (Token::Add(_, _), Type::MatrixComplex(inner_c1), Type::MatrixComplex(inner_c2)) => {
+                dbg!(inner_c1.clone());
+                dbg!(inner_c2.clone());
+                let res = inner_c1 + inner_c2;
+                dbg!(res.clone());
+                Ok(Token::Matrix(res.clone()))
+            }
             (some_operation, some_left, some_right) => {
                 dbg!((
                     some_operation.clone(),
@@ -155,6 +163,7 @@ impl Token {
                 }
             }
             Token::Vector(vec) => Ok(Token::Vector(vec.clone())),
+            Token::Matrix(matrix) => Ok(Token::Matrix(matrix.clone())),
             _ => todo!("hi"),
         }
     }
@@ -188,6 +197,26 @@ mod tests {
                 Complex::new(4.0, 0.0),
                 Complex::new(6.0, 0.0)
             ]),
+            None,
+        )
+    }
+
+    #[test]
+    fn test_eval_matrix_addition() {
+        e(
+            b"[[1,2,3],[1,2,3]]+[[1,2,3],[1,2,3]]",
+            Token::Matrix(DMatrix::from_vec(
+                2,
+                3,
+                vec![
+                    Complex::new(2.0, 0.0),
+                    Complex::new(4.0, 0.0),
+                    Complex::new(6.0, 0.0),
+                    Complex::new(2.0, 0.0),
+                    Complex::new(4.0, 0.0),
+                    Complex::new(6.0, 0.0),
+                ],
+            )),
             None,
         )
     }
