@@ -67,6 +67,8 @@ impl Display for Token {
                     )
                 }
             }
+            Token::Vector(vec) => write!(f, "{}", vec),
+            Token::Matrix(matrix) => write!(f, "{}", matrix),
             Token::Var(var_name) => write!(f, "{}", var_name),
             _ => todo!("woops"),
         }
